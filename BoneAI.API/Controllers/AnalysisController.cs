@@ -28,7 +28,7 @@ public class AnalysisController : ControllerBase
     }
 
     /// <summary>
-    /// Submits an X-ray image for asynchronous AI analysis using the specified model.
+    /// Submits an X-ray image for asynchronous AI analysis in SingleModel, MultiModel, or CompareAll mode.
     /// </summary>
     [HttpPost]
     [ProducesResponseType(typeof(AnalysisSubmissionResponse), StatusCodes.Status202Accepted)]
@@ -49,7 +49,7 @@ public class AnalysisController : ControllerBase
     }
 
     /// <summary>
-    /// Retrieves current status, execution runs, and detection results for an analysis.
+    /// Retrieves current aggregate status, execution runs, and detection results for an analysis.
     /// </summary>
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(AnalysisDetailResponse), StatusCodes.Status200OK)]
@@ -61,7 +61,7 @@ public class AnalysisController : ControllerBase
     }
 
     /// <summary>
-    /// Lists active AI models available for inference.
+    /// Lists active AI models available for inference (backward compatibility route).
     /// </summary>
     [HttpGet("models")]
     [ProducesResponseType(StatusCodes.Status200OK)]
@@ -71,10 +71,13 @@ public class AnalysisController : ControllerBase
         var result = models.Select(m => new
         {
             m.Id,
+            m.ModelKey,
             m.Name,
             m.Version,
+            m.Framework,
             m.Description,
-            m.IsActive
+            m.IsActive,
+            m.IsAvailable
         });
         return Ok(result);
     }
