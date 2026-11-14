@@ -29,8 +29,17 @@ public static class InfrastructureServiceExtensions
         // Configure Image Storage Options
         services.Configure<ImageStorageOptions>(configuration.GetSection(ImageStorageOptions.SectionName));
 
-        // Register Storage, Validation, and Persistence Services
+        // Configure AI Service Options
+        services.Configure<AIServiceOptions>(configuration.GetSection(AIServiceOptions.SectionName));
+
+        // Register Typed HttpClient for AI Service Client
+        services.AddHttpClient<IAIServiceClient, AIServiceClient>();
+
+        // Register Repositories and Services
         services.AddScoped<IXRayImageRepository, XRayImageRepository>();
+        services.AddScoped<IAnalysisRepository, AnalysisRepository>();
+        services.AddScoped<IAnalysisRunRepository, AnalysisRunRepository>();
+        services.AddScoped<IAIModelRepository, AIModelRepository>();
         services.AddSingleton<IImageStorageService, LocalImageStorageService>();
         services.AddSingleton<IImageValidator, ImageValidator>();
 
