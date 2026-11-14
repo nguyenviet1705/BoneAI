@@ -1,0 +1,29 @@
+modelKey: "mock-bone-fracture-v1"
+modelName: "Mock Pediatric Wrist Fracture Detector"
+version: "1.0.0"
+framework: "MockProvider"
+adapterId: "mock"
+artifactFile: null
+isActive: true
+description: "Development and contract-testing mock adapter for pediatric wrist fracture detection"
+supportedInputFormats:
+  - "image/jpeg"
+  - "image/png"
+classMapping:
+  "0": "fracture"
+preprocessing:
+  inputSize: [640, 640]
+  normalize: true
+postprocessing:
+  confidenceThreshold: 0.925
+  iouThreshold: 0.45
+  maxDetections: 10
+inputRequirements:
+  minWidth: 32
+  minHeight: 32
+  maxFileSizeMb: 20
+inferenceSettings:
+  boxOffsetX: 0.30
+  boxOffsetY: 0.35
+  boxWidthRatio: 0.25
+  boxHeightRatio: 0.20

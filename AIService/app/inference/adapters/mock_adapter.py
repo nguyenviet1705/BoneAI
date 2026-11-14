@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from PIL import Image
 from app.inference.interfaces.base_adapter import BaseInferenceAdapter
 from app.schemas.inference import BoundingBox, DetectionResult
@@ -7,10 +7,26 @@ class MockInferenceAdapter(BaseInferenceAdapter):
     """
     Mock inference adapter for contract verification and development testing.
     Clearly marks and returns deterministic detection bounding boxes relative to original image size.
+    Supports customization of class name, confidence, and box location per model instance.
     """
 
-    def __init__(self, model_key: str = "mock-bone-fracture-v1"):
+    def __init__(
+        self,
+        model_key: str = "mock-bone-fracture-v1",
+        default_class: str = "fracture",
+        confidence: float = 0.925,
+        box_offset_x: float = 0.30,
+        box_offset_y: float = 0.35,
+        box_width_ratio: float = 0.25,
+        box_height_ratio: float = 0.20
+    ):
         self.model_key = model_key
+        self.default_class = default_class
+        self.confidence = confidence
+        self.box_offset_x = box_offset_x
+        self.box_offset_y = box_offset_y
+        self.box_width_ratio = box_width_ratio
+        self.box_height_ratio = box_height_ratio
         self._is_loaded = False
 
     def load(self) -> None:
@@ -29,14 +45,14 @@ class MockInferenceAdapter(BaseInferenceAdapter):
         w, h = image.size
 
         # Compute safe bounding box located in wrist area (proportional to image size)
-        x = round(w * 0.30, 2)
-        y = round(h * 0.35, 2)
-        box_w = min(round(w * 0.25, 2), w - x)
-        box_h = min(round(h * 0.20, 2), h - y)
+        x = round(w * self.box_offset_x, 2)
+        y = round(h * self.box_offset_y, 2)
+        box_w = min(round(w * self.box_width_ratio, 2), w - x)
+        box_h = min(round(h * self.box_height_ratio, 2), h - y)
 
         detection = DetectionResult(
-            className="fracture",
-            confidence=0.925,
+            className=self.default_class,
+            confidence=round(self.confidence, 4),
             boundingBox=BoundingBox(
                 x=x,
                 y=y,

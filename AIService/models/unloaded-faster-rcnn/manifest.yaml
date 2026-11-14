@@ -1,0 +1,19 @@
+modelKey: "unloaded-faster-rcnn"
+modelName: "Pending Weights Faster R-CNN"
+version: "0.9.0"
+framework: "PyTorch"
+adapterId: "yolo"
+artifactFile: "missing_weights.pt"
+isActive: true
+description: "Model awaiting upload of real weights artifact"
+supportedInputFormats:
+  - "image/jpeg"
+  - "image/png"
+classMapping:
+  "0": "fracture"
+preprocessing:
+  inputSize: [800, 800]
+  normalize: true
+postprocessing:
+  confidenceThreshold: 0.50
+  iouThreshold: 0.50

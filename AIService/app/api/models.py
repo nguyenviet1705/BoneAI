@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from app.registry.model_registry import registry
-from app.schemas.models import ModelInfo, ModelListResponse
+from app.schemas.models import ModelInfo, ModelListResponse, ModelSyncResponse
 
 router = APIRouter(prefix="/api/v1/models", tags=["Models"])
 
@@ -14,3 +14,8 @@ async def list_models():
 async def get_model_details(model_key: str):
     """Retrieve metadata and readiness status for a specific model."""
     return registry.get_model(model_key)
+
+@router.post("/discover", response_model=ModelSyncResponse)
+async def discover_models():
+    """Trigger dynamic scanning of model manifests and reload registry."""
+    return registry.discover_models()

@@ -8,5 +8,7 @@ class Settings(BaseModel):
     port: int = int(os.getenv("AI_SERVICE_PORT", "8000"))
     environment: str = os.getenv("ENVIRONMENT", "development")
     log_level: str = os.getenv("LOG_LEVEL", "info")
+    models_dir: str = os.getenv("MODELS_DIR", os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "models"))
+    max_concurrent_inferences: int = int(os.getenv("MAX_CONCURRENT_INFERENCES", "4"))
 
 settings = Settings()

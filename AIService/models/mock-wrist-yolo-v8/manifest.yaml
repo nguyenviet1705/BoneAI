@@ -1,0 +1,30 @@
+modelKey: "mock-wrist-yolo-v8"
+modelName: "YOLOv8 Pediatric Wrist Fracture Model"
+version: "1.2.0"
+framework: "MockProvider"
+adapterId: "mock"
+artifactFile: null
+isActive: true
+description: "YOLOv8-based fast single-stage pediatric wrist fracture detection model"
+supportedInputFormats:
+  - "image/jpeg"
+  - "image/png"
+classMapping:
+  "0": "distal_radius_fracture"
+  "1": "ulna_fracture"
+preprocessing:
+  inputSize: [640, 640]
+  normalize: true
+postprocessing:
+  confidenceThreshold: 0.880
+  iouThreshold: 0.50
+  maxDetections: 20
+inputRequirements:
+  minWidth: 64
+  minHeight: 64
+  maxFileSizeMb: 25
+inferenceSettings:
+  boxOffsetX: 0.32
+  boxOffsetY: 0.38
+  boxWidthRatio: 0.22
+  boxHeightRatio: 0.18
