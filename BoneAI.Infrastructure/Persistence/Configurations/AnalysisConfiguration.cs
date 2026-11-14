@@ -23,9 +23,16 @@ public class AnalysisConfiguration : IEntityTypeConfiguration<Analysis>
         builder.Property(a => a.CreatedAt)
             .IsRequired();
 
+        builder.Property(a => a.IdempotencyKey)
+            .HasMaxLength(128);
+
         builder.HasIndex(a => a.XRayImageId);
         builder.HasIndex(a => a.Status);
         builder.HasIndex(a => a.CreatedAt);
+
+        builder.HasIndex(a => a.IdempotencyKey)
+            .IsUnique()
+            .HasFilter("[IdempotencyKey] IS NOT NULL");
 
         builder.HasMany(a => a.AnalysisRuns)
             .WithOne(r => r.Analysis)

@@ -53,6 +53,16 @@ namespace BoneAI.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("AIModels", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("11111111-1111-1111-1111-111111111111"),
+                            Description = "Development and contract-testing mock adapter for pediatric wrist fracture detection",
+                            IsActive = true,
+                            Name = "mock-bone-fracture-v1",
+                            Version = "1.0.0"
+                        });
                 });
 
             modelBuilder.Entity("BoneAI.Domain.Entities.Analysis", b =>
@@ -63,6 +73,10 @@ namespace BoneAI.Infrastructure.Persistence.Migrations
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
+
+                    b.Property<string>("IdempotencyKey")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -75,6 +89,10 @@ namespace BoneAI.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedAt");
+
+                    b.HasIndex("IdempotencyKey")
+                        .IsUnique()
+                        .HasFilter("[IdempotencyKey] IS NOT NULL");
 
                     b.HasIndex("Status");
 
@@ -102,6 +120,17 @@ namespace BoneAI.Infrastructure.Persistence.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
 
+                    b.Property<DateTime?>("LeaseUntil")
+                        .HasColumnType("datetime2");
+
+                    b.Property<long?>("ProcessingTimeMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("RetryCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
                     b.Property<DateTime?>("StartedAt")
                         .HasColumnType("datetime2");
 
@@ -117,6 +146,8 @@ namespace BoneAI.Infrastructure.Persistence.Migrations
                     b.HasIndex("AnalysisId");
 
                     b.HasIndex("AnalysisId", "AIModelId");
+
+                    b.HasIndex("Status", "LeaseUntil");
 
                     b.ToTable("AnalysisRuns", (string)null);
                 });

@@ -10,7 +10,10 @@ public class AnalysisRun
     public AnalysisRunStatus Status { get; set; }
     public DateTime? StartedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
+    public long? ProcessingTimeMs { get; set; }
     public string? ErrorMessage { get; set; }
+    public int RetryCount { get; set; }
+    public DateTime? LeaseUntil { get; set; }
 
     public Analysis? Analysis { get; set; }
     public AIModel? AIModel { get; set; }
