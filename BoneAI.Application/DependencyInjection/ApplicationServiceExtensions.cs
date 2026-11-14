@@ -10,6 +10,7 @@ public static class ApplicationServiceExtensions
     {
         services.AddScoped<IImageService, ImageService>();
         services.AddScoped<IAnalysisService, AnalysisService>();
+        services.AddScoped<IModelManagementService, ModelManagementService>();
         return services;
     }
 }

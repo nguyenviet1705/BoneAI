@@ -4,6 +4,8 @@ public class AnalysisSubmissionResponse
 {
     public Guid AnalysisId { get; set; }
     public Guid AnalysisRunId { get; set; }
+    public List<Guid> AnalysisRunIds { get; set; } = new();
+    public string Mode { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
     public string StatusUrl { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }

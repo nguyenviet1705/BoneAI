@@ -53,19 +53,13 @@ public class AnalysisService : IAnalysisService
             throw new NotFoundException($"Physical image file for '{request.XRayImageId}' was not found in server storage.");
         }
 
-        // 3. Validate AIModel exists and is active
-        var model = await _modelRepo.GetByIdAsync(request.AIModelId, cancellationToken);
-        if (model == null)
-        {
-            throw new NotFoundException($"AI Model with ID '{request.AIModelId}' was not found.");
-        }
+        // 3. Resolve Analysis Mode
+        var mode = ResolveAnalysisMode(request);
 
-        if (!model.IsActive)
-        {
-            throw new ValidationException($"AI Model '{model.Name}' (v{model.Version}) is currently inactive.");
-        }
+        // 4. Resolve Eligible Models according to Mode
+        var modelsToRun = await ResolveModelsForExecutionAsync(mode, request, cancellationToken);
 
-        // 4. Idempotency Check
+        // 5. Idempotency Check
         if (!string.IsNullOrWhiteSpace(request.IdempotencyKey))
         {
             var existing = await _analysisRepo.GetByIdempotencyKeyAsync(request.IdempotencyKey.Trim(), cancellationToken);
@@ -74,11 +68,13 @@ public class AnalysisService : IAnalysisService
                 _logger.LogInformation("Idempotent request matched existing Analysis {AnalysisId} for key '{Key}'. Returning existing resource.",
                     existing.Id, request.IdempotencyKey);
 
-                var primaryRun = existing.AnalysisRuns.FirstOrDefault();
+                var firstRun = existing.AnalysisRuns.FirstOrDefault();
                 return new AnalysisSubmissionResponse
                 {
                     AnalysisId = existing.Id,
-                    AnalysisRunId = primaryRun?.Id ?? Guid.Empty,
+                    AnalysisRunId = firstRun?.Id ?? Guid.Empty,
+                    AnalysisRunIds = existing.AnalysisRuns.Select(r => r.Id).ToList(),
+                    Mode = existing.Mode.ToString(),
                     Status = existing.Status.ToString(),
                     StatusUrl = $"/api/analysis/{existing.Id}",
                     CreatedAt = existing.CreatedAt
@@ -86,40 +82,47 @@ public class AnalysisService : IAnalysisService
             }
         }
 
-        // 5. Create Analysis and AnalysisRun
+        // 6. Create Analysis and AnalysisRuns
         var analysisId = Guid.NewGuid();
-        var runId = Guid.NewGuid();
-
-        var run = new AnalysisRun
-        {
-            Id = runId,
-            AnalysisId = analysisId,
-            AIModelId = model.Id,
-            Status = AnalysisRunStatus.Pending,
-            RetryCount = 0
-        };
-
         var analysis = new Analysis
         {
             Id = analysisId,
             XRayImageId = image.Id,
+            Mode = mode,
             Status = AnalysisStatus.Pending,
             CreatedAt = DateTime.UtcNow,
             IdempotencyKey = string.IsNullOrWhiteSpace(request.IdempotencyKey) ? null : request.IdempotencyKey.Trim()
         };
 
-        analysis.AnalysisRuns.Add(run);
+        var runIds = new List<Guid>();
+        foreach (var model in modelsToRun)
+        {
+            var runId = Guid.NewGuid();
+            runIds.Add(runId);
+
+            var run = new AnalysisRun
+            {
+                Id = runId,
+                AnalysisId = analysisId,
+                AIModelId = model.Id,
+                Status = AnalysisRunStatus.Pending,
+                RetryCount = 0
+            };
+            analysis.AnalysisRuns.Add(run);
+        }
 
         await _analysisRepo.AddAsync(analysis, cancellationToken);
         await _analysisRepo.SaveChangesAsync(cancellationToken);
 
-        _logger.LogInformation("Analysis {AnalysisId} and Run {RunId} successfully queued for image {ImageId} with model {ModelName}",
-            analysisId, runId, image.Id, model.Name);
+        _logger.LogInformation("Analysis {AnalysisId} queued in mode '{Mode}' with {Count} model runs for image {ImageId}",
+            analysisId, mode, modelsToRun.Count, image.Id);
 
         return new AnalysisSubmissionResponse
         {
             AnalysisId = analysisId,
-            AnalysisRunId = runId,
+            AnalysisRunId = runIds.FirstOrDefault(),
+            AnalysisRunIds = runIds,
+            Mode = analysis.Mode.ToString(),
             Status = analysis.Status.ToString(),
             StatusUrl = $"/api/analysis/{analysisId}",
             CreatedAt = analysis.CreatedAt
@@ -138,12 +141,15 @@ public class AnalysisService : IAnalysisService
         {
             AnalysisRunId = r.Id,
             AIModelId = r.AIModelId,
+            ModelKey = r.AIModel?.ModelKey ?? string.Empty,
             ModelName = r.AIModel?.Name ?? string.Empty,
             ModelVersion = r.AIModel?.Version ?? string.Empty,
+            Framework = r.AIModel?.Framework ?? string.Empty,
             Status = r.Status.ToString(),
             StartedAt = r.StartedAt,
             CompletedAt = r.CompletedAt,
             ProcessingTimeMs = r.ProcessingTimeMs,
+            RetryCount = r.RetryCount,
             ErrorMessage = r.ErrorMessage,
             Detections = r.Detections.Select(d => new DetectionDto
             {
@@ -157,13 +163,131 @@ public class AnalysisService : IAnalysisService
             }).ToList()
         }).ToList();
 
+        var completedRuns = runDtos.Count(r => r.Status == AnalysisRunStatus.Completed.ToString());
+        var failedRuns = runDtos.Count(r => r.Status == AnalysisRunStatus.Failed.ToString());
+
         return new AnalysisDetailResponse
         {
             AnalysisId = analysis.Id,
             XRayImageId = analysis.XRayImageId,
+            Mode = analysis.Mode.ToString(),
             Status = analysis.Status.ToString(),
             CreatedAt = analysis.CreatedAt,
+            TotalRunsCount = runDtos.Count,
+            CompletedRunsCount = completedRuns,
+            FailedRunsCount = failedRuns,
             AnalysisRuns = runDtos
         };
+    }
+
+    private static AnalysisMode ResolveAnalysisMode(SubmitAnalysisRequest request)
+    {
+        if (request.Mode.HasValue)
+        {
+            return request.Mode.Value;
+        }
+
+        // Automatic inference for backward compatibility
+        if (request.SelectedModelIds != null && request.SelectedModelIds.Count > 1)
+        {
+            return AnalysisMode.MultiModel;
+        }
+
+        return AnalysisMode.SingleModel;
+    }
+
+    private async Task<List<AIModel>> ResolveModelsForExecutionAsync(
+        AnalysisMode mode,
+        SubmitAnalysisRequest request,
+        CancellationToken cancellationToken)
+    {
+        switch (mode)
+        {
+            case AnalysisMode.SingleModel:
+            {
+                var targetId = request.SelectedModelIds?.FirstOrDefault() ?? request.AIModelId;
+                if (!targetId.HasValue || targetId.Value == Guid.Empty)
+                {
+                    throw new ValidationException("Single Model mode requires exactly one selected model ID.");
+                }
+
+                if (request.SelectedModelIds != null && request.SelectedModelIds.Count > 1)
+                {
+                    throw new ValidationException("Single Model mode cannot accept more than one selected model ID.");
+                }
+
+                var model = await _modelRepo.GetByIdAsync(targetId.Value, cancellationToken);
+                if (model == null)
+                {
+                    throw new NotFoundException($"AI Model with ID '{targetId.Value}' was not found.");
+                }
+
+                if (!model.IsActive)
+                {
+                    throw new ValidationException($"AI Model '{model.Name}' (v{model.Version}) is currently inactive.");
+                }
+
+                if (!model.IsAvailable)
+                {
+                    throw new ValidationException($"AI Model '{model.Name}' (v{model.Version}) is currently unavailable in the inference service.");
+                }
+
+                return new List<AIModel> { model };
+            }
+
+            case AnalysisMode.MultiModel:
+            {
+                var selectedIds = request.SelectedModelIds;
+                if (selectedIds == null || selectedIds.Count < 2)
+                {
+                    throw new ValidationException("Multi-Model mode requires at least two selected model IDs.");
+                }
+
+                // Check for duplicate model IDs
+                var distinctCount = selectedIds.Distinct().Count();
+                if (distinctCount != selectedIds.Count)
+                {
+                    throw new ValidationException("Duplicate model IDs are not allowed in Multi-Model mode.");
+                }
+
+                var models = new List<AIModel>();
+                foreach (var id in selectedIds)
+                {
+                    var model = await _modelRepo.GetByIdAsync(id, cancellationToken);
+                    if (model == null)
+                    {
+                        throw new NotFoundException($"AI Model with ID '{id}' was not found.");
+                    }
+
+                    if (!model.IsActive)
+                    {
+                        throw new ValidationException($"Selected AI Model '{model.Name}' (v{model.Version}) is currently inactive.");
+                    }
+
+                    if (!model.IsAvailable)
+                    {
+                        throw new ValidationException($"Selected AI Model '{model.Name}' (v{model.Version}) is currently unavailable.");
+                    }
+
+                    models.Add(model);
+                }
+
+                return models;
+            }
+
+            case AnalysisMode.CompareAll:
+            {
+                var activeAvailableModels = await _modelRepo.GetActiveAndAvailableModelsAsync(cancellationToken);
+                if (activeAvailableModels.Count == 0)
+                {
+                    throw new ValidationException("Compare All mode requires at least one active and available AI model in the catalog.");
+                }
+
+                return activeAvailableModels.ToList();
+            }
+
+            default:
+                throw new ValidationException($"Unsupported analysis mode: {mode}");
+        }
     }
 }
