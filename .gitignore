@@ -483,3 +483,8 @@ $RECYCLE.BIN/
 
 # Application Storage directory
 [Ss]torage/
+
+# Python cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
