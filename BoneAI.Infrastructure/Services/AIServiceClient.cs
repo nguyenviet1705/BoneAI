@@ -82,6 +82,68 @@ public class AIServiceClient : IAIServiceClient
         }
     }
 
+    public async Task<IReadOnlyList<AIServiceModelDto>> GetModelCatalogAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var response = await _httpClient.GetAsync("api/v1/models", cancellationToken);
+            response.EnsureSuccessStatusCode();
+
+            var json = await response.Content.ReadAsStringAsync(cancellationToken);
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("models", out var modelsElem))
+            {
+                var models = JsonSerializer.Deserialize<List<AIServiceModelDto>>(modelsElem.GetRawText(), JsonOptions);
+                return models ?? new List<AIServiceModelDto>();
+            }
+
+            return Array.Empty<AIServiceModelDto>();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to retrieve model catalog from AI Service: {Message}", ex.Message);
+            throw;
+        }
+    }
+
+    public async Task<AIServiceModelDto?> GetModelDetailsAsync(string modelKey, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var response = await _httpClient.GetAsync($"api/v1/models/{Uri.EscapeDataString(modelKey)}", cancellationToken);
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                return null;
+            }
+
+            response.EnsureSuccessStatusCode();
+            var json = await response.Content.ReadAsStringAsync(cancellationToken);
+            return JsonSerializer.Deserialize<AIServiceModelDto>(json, JsonOptions);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to retrieve details for model '{ModelKey}' from AI Service: {Message}", modelKey, ex.Message);
+            throw;
+        }
+    }
+
+    public async Task<AIServiceModelSyncResultDto> TriggerModelDiscoveryAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsync("api/v1/models/discover", null, cancellationToken);
+            response.EnsureSuccessStatusCode();
+
+            var json = await response.Content.ReadAsStringAsync(cancellationToken);
+            return JsonSerializer.Deserialize<AIServiceModelSyncResultDto>(json, JsonOptions) ?? new AIServiceModelSyncResultDto();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to trigger model discovery on AI Service: {Message}", ex.Message);
+            throw;
+        }
+    }
+
     public async Task<InferenceClientResponse> ExecuteInferenceAsync(
         InferenceClientRequest request,
         CancellationToken cancellationToken = default)
@@ -103,9 +165,9 @@ public class AIServiceClient : IAIServiceClient
         }
 
         var streamContent = new StreamContent(request.ImageStream);
-        var mime = string.IsNullOrWhiteSpace(request.ContentType) ? "image/jpeg" : request.ContentType;
-        streamContent.Headers.ContentType = new MediaTypeHeaderValue(mime);
-        content.Add(streamContent, "image", string.IsNullOrWhiteSpace(request.FileName) ? "xray.jpg" : request.FileName);
+        var mediaType = string.IsNullOrWhiteSpace(request.ContentType) ? "image/jpeg" : request.ContentType;
+        streamContent.Headers.ContentType = new MediaTypeHeaderValue(mediaType);
+        content.Add(streamContent, "image", request.FileName);
 
         HttpResponseMessage response;
         try
@@ -114,73 +176,91 @@ public class AIServiceClient : IAIServiceClient
         }
         catch (HttpRequestException ex)
         {
-            _logger.LogError(ex, "HTTP connection error while communicating with AI Service: {Message}", ex.Message);
+            _logger.LogError(ex, "HTTP network failure connecting to AI Service: {Message}", ex.Message);
             throw;
         }
         catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
-            _logger.LogError(ex, "Timeout elapsed while waiting for AI Service inference response ({Timeout}s).", _options.TimeoutSeconds);
-            throw new TimeoutException($"AI Service inference request timed out after {_options.TimeoutSeconds} seconds.", ex);
+            _logger.LogError(ex, "AI Service inference timed out after {Timeout} seconds", _options.TimeoutSeconds);
+            throw new TimeoutException($"Inference service timed out after {_options.TimeoutSeconds} seconds.", ex);
         }
 
-        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+        var responseString = await response.Content.ReadAsStringAsync(cancellationToken);
 
         if (!response.IsSuccessStatusCode)
         {
-            _logger.LogError("AI Service inference failed with status {StatusCode}: {Body}", response.StatusCode, responseBody);
-            throw new InvalidOperationException($"AI Service returned error {(int)response.StatusCode}: {responseBody}");
+            _logger.LogError("AI Service responded with status {StatusCode}: {Response}", (int)response.StatusCode, responseString);
+
+            string? detailMessage = null;
+            try
+            {
+                using var errDoc = JsonDocument.Parse(responseString);
+                if (errDoc.RootElement.TryGetProperty("message", out var msgProp))
+                {
+                    detailMessage = msgProp.GetString();
+                }
+                else if (errDoc.RootElement.TryGetProperty("detail", out var dtProp))
+                {
+                    detailMessage = dtProp.GetString();
+                }
+            }
+            catch
+            {
+                detailMessage = responseString;
+            }
+
+            if (response.StatusCode == System.Net.HttpStatusCode.BadRequest ||
+                response.StatusCode == System.Net.HttpStatusCode.UnprocessableEntity)
+            {
+                throw new ValidationException(detailMessage ?? "AI Service rejected image payload.");
+            }
+
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                throw new NotFoundException(detailMessage ?? $"Requested model '{request.ModelKey}' was not found in AI Service registry.");
+            }
+
+            if (response.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable)
+            {
+                throw new InvalidOperationException(detailMessage ?? $"Model '{request.ModelKey}' is registered but not loaded/ready.");
+            }
+
+            throw new HttpRequestException($"AI Service error [{(int)response.StatusCode}]: {detailMessage ?? response.ReasonPhrase}");
         }
 
-        var result = JsonSerializer.Deserialize<RawInferenceResponse>(responseBody, JsonOptions)
-            ?? throw new InvalidOperationException("Failed to deserialize AI Service inference response payload.");
+        using var doc = JsonDocument.Parse(responseString);
+        var root = doc.RootElement;
 
-        return new InferenceClientResponse
+        var clientResponse = new InferenceClientResponse
         {
-            AnalysisRunId = Guid.TryParse(result.AnalysisRunId, out var parsedId) ? parsedId : request.AnalysisRunId,
-            ModelKey = result.ModelKey,
-            ModelVersion = result.ModelVersion,
-            ImageWidth = result.ImageWidth,
-            ImageHeight = result.ImageHeight,
-            ProcessingTimeMs = result.ProcessingTimeMs,
-            IsMockResult = result.IsMockResult,
-            Warning = result.Warning,
-            Detections = result.Detections.Select(d => new InferenceDetectionItem
-            {
-                ClassName = d.ClassName,
-                Confidence = d.Confidence,
-                X = d.BoundingBox.X,
-                Y = d.BoundingBox.Y,
-                Width = d.BoundingBox.Width,
-                Height = d.BoundingBox.Height
-            }).ToList()
+            AnalysisRunId = root.GetProperty("analysisRunId").GetGuid(),
+            ModelKey = root.GetProperty("modelKey").GetString() ?? request.ModelKey,
+            ModelVersion = root.GetProperty("modelVersion").GetString() ?? string.Empty,
+            ImageWidth = root.GetProperty("imageWidth").GetInt32(),
+            ImageHeight = root.GetProperty("imageHeight").GetInt32(),
+            ProcessingTimeMs = root.GetProperty("processingTimeMs").GetInt64()
         };
-    }
 
-    private class RawBoundingBox
-    {
-        public decimal X { get; set; }
-        public decimal Y { get; set; }
-        public decimal Width { get; set; }
-        public decimal Height { get; set; }
-    }
+        if (root.TryGetProperty("detections", out var detectionsArray) && detectionsArray.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var elem in detectionsArray.EnumerateArray())
+            {
+                var className = elem.GetProperty("className").GetString() ?? "fracture";
+                var confidence = elem.GetProperty("confidence").GetDecimal();
+                var box = elem.GetProperty("boundingBox");
 
-    private class RawDetection
-    {
-        public string ClassName { get; set; } = string.Empty;
-        public decimal Confidence { get; set; }
-        public RawBoundingBox BoundingBox { get; set; } = new();
-    }
+                clientResponse.Detections.Add(new InferenceDetectionItem
+                {
+                    ClassName = className,
+                    Confidence = confidence,
+                    X = box.GetProperty("x").GetDecimal(),
+                    Y = box.GetProperty("y").GetDecimal(),
+                    Width = box.GetProperty("width").GetDecimal(),
+                    Height = box.GetProperty("height").GetDecimal()
+                });
+            }
+        }
 
-    private class RawInferenceResponse
-    {
-        public string AnalysisRunId { get; set; } = string.Empty;
-        public string ModelKey { get; set; } = string.Empty;
-        public string ModelVersion { get; set; } = string.Empty;
-        public int ImageWidth { get; set; }
-        public int ImageHeight { get; set; }
-        public long ProcessingTimeMs { get; set; }
-        public List<RawDetection> Detections { get; set; } = new();
-        public bool IsMockResult { get; set; }
-        public string? Warning { get; set; }
+        return clientResponse;
     }
 }

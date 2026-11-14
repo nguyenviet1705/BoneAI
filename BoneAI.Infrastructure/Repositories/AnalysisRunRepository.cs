@@ -65,6 +65,13 @@ public class AnalysisRunRepository : IAnalysisRunRepository
             .FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<AnalysisRun>> GetRunsByAnalysisIdAsync(Guid analysisId, CancellationToken cancellationToken = default)
+    {
+        return await _context.AnalysisRuns
+            .Where(r => r.AnalysisId == analysisId)
+            .ToListAsync(cancellationToken);
+    }
+
     public Task UpdateRunAsync(AnalysisRun run, CancellationToken cancellationToken = default)
     {
         _context.AnalysisRuns.Update(run);

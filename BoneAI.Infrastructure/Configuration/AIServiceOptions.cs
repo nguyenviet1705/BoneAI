@@ -9,4 +9,5 @@ public class AIServiceOptions
     public int HealthCheckTimeoutSeconds { get; set; } = 5;
     public int MaxRetryAttempts { get; set; } = 3;
     public int InitialRetryDelayMs { get; set; } = 1000;
+    public int MaxDegreeOfParallelism { get; set; } = 4;
 }

@@ -2,6 +2,7 @@ using BoneAI.Application.DTOs;
 using BoneAI.Application.Interfaces;
 using BoneAI.Domain.Entities;
 using BoneAI.Domain.Enums;
+using BoneAI.Domain.Services;
 using BoneAI.Infrastructure.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -15,6 +16,7 @@ public class AnalysisBackgroundWorker : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly AIServiceOptions _options;
     private readonly ILogger<AnalysisBackgroundWorker> _logger;
+    private readonly SemaphoreSlim _concurrencySemaphore;
 
     public AnalysisBackgroundWorker(
         IServiceScopeFactory scopeFactory,
@@ -24,20 +26,27 @@ public class AnalysisBackgroundWorker : BackgroundService
         _scopeFactory = scopeFactory;
         _options = options.Value;
         _logger = logger;
+        _concurrencySemaphore = new SemaphoreSlim(
+            _options.MaxDegreeOfParallelism > 0 ? _options.MaxDegreeOfParallelism : 4,
+            _options.MaxDegreeOfParallelism > 0 ? _options.MaxDegreeOfParallelism : 4);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("AnalysisBackgroundWorker started. Polling for pending inference jobs.");
+        _logger.LogInformation("AnalysisBackgroundWorker started with max concurrency {Concurrency}. Polling for pending inference jobs.",
+            _options.MaxDegreeOfParallelism);
 
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                var processedJob = await ProcessNextJobAsync(stoppingToken);
-                if (!processedJob)
+                await _concurrencySemaphore.WaitAsync(stoppingToken);
+
+                // Attempt to claim and spawn job processing
+                var jobClaimed = await TryDispatchJobAsync(stoppingToken);
+                if (!jobClaimed)
                 {
-                    // No job claimed, wait briefly before next poll
+                    _concurrencySemaphore.Release();
                     await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
                 }
             }
@@ -47,7 +56,7 @@ public class AnalysisBackgroundWorker : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Unexpected exception in AnalysisBackgroundWorker polling loop: {Message}", ex.Message);
+                _logger.LogError(ex, "Unexpected exception in AnalysisBackgroundWorker dispatch loop: {Message}", ex.Message);
                 await Task.Delay(TimeSpan.FromSeconds(3), stoppingToken);
             }
         }
@@ -55,13 +64,10 @@ public class AnalysisBackgroundWorker : BackgroundService
         _logger.LogInformation("AnalysisBackgroundWorker stopped.");
     }
 
-    public async Task<bool> ProcessNextJobAsync(CancellationToken cancellationToken)
+    private async Task<bool> TryDispatchJobAsync(CancellationToken cancellationToken)
     {
         using var scope = _scopeFactory.CreateScope();
         var runRepo = scope.ServiceProvider.GetRequiredService<IAnalysisRunRepository>();
-        var analysisRepo = scope.ServiceProvider.GetRequiredService<IAnalysisRepository>();
-        var storageService = scope.ServiceProvider.GetRequiredService<IImageStorageService>();
-        var aiClient = scope.ServiceProvider.GetRequiredService<IAIServiceClient>();
 
         // Atomically claim next job with a 2-minute processing lease
         var run = await runRepo.ClaimNextPendingRunAsync(TimeSpan.FromMinutes(2), cancellationToken);
@@ -70,8 +76,60 @@ public class AnalysisBackgroundWorker : BackgroundService
             return false;
         }
 
+        var runId = run.Id;
         _logger.LogInformation("Claimed AnalysisRun {RunId} for Analysis {AnalysisId}, Model: {ModelName}",
-            run.Id, run.AnalysisId, run.AIModel?.Name);
+            runId, run.AnalysisId, run.AIModel?.Name);
+
+        // Process asynchronously without blocking the dispatch loop
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await ProcessClaimedJobAsync(runId, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unhandled exception processing AnalysisRun {RunId}: {Message}", runId, ex.Message);
+            }
+            finally
+            {
+                _concurrencySemaphore.Release();
+            }
+        }, cancellationToken);
+
+        return true;
+    }
+
+    public async Task<bool> ProcessNextJobAsync(CancellationToken cancellationToken)
+    {
+        // Direct synchronous processing method used by tests
+        using var scope = _scopeFactory.CreateScope();
+        var runRepo = scope.ServiceProvider.GetRequiredService<IAnalysisRunRepository>();
+
+        var run = await runRepo.ClaimNextPendingRunAsync(TimeSpan.FromMinutes(2), cancellationToken);
+        if (run == null)
+        {
+            return false;
+        }
+
+        await ProcessClaimedJobAsync(run.Id, cancellationToken);
+        return true;
+    }
+
+    private async Task ProcessClaimedJobAsync(Guid runId, CancellationToken cancellationToken)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var runRepo = scope.ServiceProvider.GetRequiredService<IAnalysisRunRepository>();
+        var analysisRepo = scope.ServiceProvider.GetRequiredService<IAnalysisRepository>();
+        var storageService = scope.ServiceProvider.GetRequiredService<IImageStorageService>();
+        var aiClient = scope.ServiceProvider.GetRequiredService<IAIServiceClient>();
+
+        var run = await runRepo.GetByIdAsync(runId, cancellationToken);
+        if (run == null)
+        {
+            _logger.LogWarning("AnalysisRun {RunId} could not be reloaded after claiming.", runId);
+            return;
+        }
 
         var analysis = run.Analysis;
         var xRayImage = analysis?.XRayImage;
@@ -79,8 +137,8 @@ public class AnalysisBackgroundWorker : BackgroundService
         if (xRayImage == null)
         {
             _logger.LogError("AnalysisRun {RunId} failed: associated XRayImage metadata is null.", run.Id);
-            await FailRunAsync(run, analysis, "Associated X-ray image metadata was not found.", runRepo, cancellationToken);
-            return true;
+            await FailRunAsync(run, "Associated X-ray image metadata was not found.", runRepo, analysisRepo, cancellationToken);
+            return;
         }
 
         // Retrieve physical image stream from storage
@@ -88,11 +146,13 @@ public class AnalysisBackgroundWorker : BackgroundService
         if (imageStream == null)
         {
             _logger.LogError("AnalysisRun {RunId} failed: physical file missing at {FilePath}.", run.Id, xRayImage.FilePath);
-            await FailRunAsync(run, analysis, $"Original image file was not found in storage at '{xRayImage.FilePath}'.", runRepo, cancellationToken);
-            return true;
+            await FailRunAsync(run, $"Original image file was not found in storage at '{xRayImage.FilePath}'.", runRepo, analysisRepo, cancellationToken);
+            return;
         }
 
-        var modelKey = run.AIModel?.Name ?? "mock-bone-fracture-v1";
+        var modelKey = !string.IsNullOrEmpty(run.AIModel?.ModelKey)
+            ? run.AIModel.ModelKey
+            : (run.AIModel?.Name ?? "mock-bone-fracture-v1");
         var modelVersion = run.AIModel?.Version;
 
         var request = new InferenceClientRequest
@@ -109,11 +169,10 @@ public class AnalysisBackgroundWorker : BackgroundService
         {
             var response = await aiClient.ExecuteInferenceAsync(request, cancellationToken);
 
-            // Validate and build detection entities
+            // Validate and build detection entities isolated to this run
             var detections = new List<Detection>();
             foreach (var d in response.Detections)
             {
-                // Ensure bounding box coordinates are clamped and valid
                 var x = Math.Max(0m, Math.Min(d.X, (decimal)response.ImageWidth));
                 var y = Math.Max(0m, Math.Min(d.Y, (decimal)response.ImageHeight));
                 var width = Math.Max(0m, Math.Min(d.Width, (decimal)response.ImageWidth - x));
@@ -133,7 +192,7 @@ public class AnalysisBackgroundWorker : BackgroundService
                 });
             }
 
-            // Transactionally persist detections and update statuses
+            // Transactionally persist detections isolated to this run
             await runRepo.SaveDetectionsAsync(run.Id, detections, cancellationToken);
 
             run.Status = AnalysisRunStatus.Completed;
@@ -142,16 +201,13 @@ public class AnalysisBackgroundWorker : BackgroundService
             run.ErrorMessage = null;
             run.LeaseUntil = null;
 
-            if (analysis != null)
-            {
-                analysis.Status = AnalysisStatus.Completed;
-            }
-
             await runRepo.SaveChangesAsync(cancellationToken);
+
+            // Recalculate aggregate status across all sibling runs
+            await UpdateAggregateAnalysisStatusAsync(run.AnalysisId, runRepo, analysisRepo, cancellationToken);
+
             _logger.LogInformation("Successfully completed AnalysisRun {RunId} with {Count} detections in {Ms}ms",
                 run.Id, detections.Count, response.ProcessingTimeMs);
-
-            return true;
         }
         catch (Exception ex) when (IsTransient(ex))
         {
@@ -172,24 +228,21 @@ public class AnalysisBackgroundWorker : BackgroundService
             {
                 _logger.LogError(ex, "AnalysisRun {RunId} failed permanently: exhausted {Max} retries. Error: {Message}",
                     run.Id, _options.MaxRetryAttempts, ex.Message);
-                await FailRunAsync(run, analysis, $"Inference failed after {_options.MaxRetryAttempts} retry attempts: {ex.Message}", runRepo, cancellationToken);
+                await FailRunAsync(run, $"Inference failed after {_options.MaxRetryAttempts} retry attempts: {ex.Message}", runRepo, analysisRepo, cancellationToken);
             }
-
-            return true;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "AnalysisRun {RunId} failed with non-transient error: {Message}", run.Id, ex.Message);
-            await FailRunAsync(run, analysis, $"Inference failed: {ex.Message}", runRepo, cancellationToken);
-            return true;
+            await FailRunAsync(run, $"Inference failed: {ex.Message}", runRepo, analysisRepo, cancellationToken);
         }
     }
 
     private static async Task FailRunAsync(
         AnalysisRun run,
-        Analysis? analysis,
         string errorMessage,
         IAnalysisRunRepository runRepo,
+        IAnalysisRepository analysisRepo,
         CancellationToken cancellationToken)
     {
         run.Status = AnalysisRunStatus.Failed;
@@ -197,12 +250,30 @@ public class AnalysisBackgroundWorker : BackgroundService
         run.ErrorMessage = errorMessage.Length > 2000 ? errorMessage[..2000] : errorMessage;
         run.LeaseUntil = null;
 
-        if (analysis != null)
-        {
-            analysis.Status = AnalysisStatus.Failed;
-        }
-
         await runRepo.SaveChangesAsync(cancellationToken);
+
+        // Recalculate aggregate status across all sibling runs
+        await UpdateAggregateAnalysisStatusAsync(run.AnalysisId, runRepo, analysisRepo, cancellationToken);
+    }
+
+    private static async Task UpdateAggregateAnalysisStatusAsync(
+        Guid analysisId,
+        IAnalysisRunRepository runRepo,
+        IAnalysisRepository analysisRepo,
+        CancellationToken cancellationToken)
+    {
+        var siblingRuns = await runRepo.GetRunsByAnalysisIdAsync(analysisId, cancellationToken);
+        var analysis = await analysisRepo.GetByIdAsync(analysisId, cancellationToken);
+
+        if (analysis != null && siblingRuns.Count > 0)
+        {
+            var calculatedStatus = AnalysisStatusCalculator.Calculate(siblingRuns);
+            if (analysis.Status != calculatedStatus)
+            {
+                analysis.Status = calculatedStatus;
+                await analysisRepo.SaveChangesAsync(cancellationToken);
+            }
+        }
     }
 
     private static bool IsTransient(Exception ex)
