@@ -60,6 +60,7 @@ public class AnalysisRunRepository : IAnalysisRunRepository
     {
         return await _context.AnalysisRuns
             .Include(r => r.Analysis)
+                .ThenInclude(a => a!.XRayImage)
             .Include(r => r.AIModel)
             .Include(r => r.Detections)
             .FirstOrDefaultAsync(r => r.Id == id, cancellationToken);

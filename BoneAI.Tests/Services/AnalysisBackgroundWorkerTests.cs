@@ -103,7 +103,7 @@ public class AnalysisBackgroundWorkerTests
         Assert.Equal(50, run.ProcessingTimeMs);
 
         _mockRunRepo.Verify(r => r.SaveDetectionsAsync(runId, It.Is<IEnumerable<Detection>>(d => d.Count() == 1), It.IsAny<CancellationToken>()), Times.Once);
-        _mockRunRepo.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _mockRunRepo.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.AtLeastOnce);
     }
 
     [Fact]

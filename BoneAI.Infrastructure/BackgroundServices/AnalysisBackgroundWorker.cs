@@ -206,10 +206,10 @@ public class AnalysisBackgroundWorker : BackgroundService
             run.ErrorMessage = null;
             run.LeaseUntil = null;
 
+            await runRepo.SaveChangesAsync(cancellationToken);
+
             // Recalculate aggregate status across all sibling runs
             await UpdateAggregateAnalysisStatusAsync(run, runRepo, analysisRepo, cancellationToken);
-
-            await runRepo.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation("Successfully completed AnalysisRun {RunId} with {Count} detections in {Ms}ms",
                 run.Id, detections.Count, response.ProcessingTimeMs);
@@ -255,10 +255,10 @@ public class AnalysisBackgroundWorker : BackgroundService
         run.ErrorMessage = errorMessage.Length > 2000 ? errorMessage[..2000] : errorMessage;
         run.LeaseUntil = null;
 
+        await runRepo.SaveChangesAsync(cancellationToken);
+
         // Recalculate aggregate status across all sibling runs
         await UpdateAggregateAnalysisStatusAsync(run, runRepo, analysisRepo, cancellationToken);
-
-        await runRepo.SaveChangesAsync(cancellationToken);
     }
 
     private static async Task UpdateAggregateAnalysisStatusAsync(
@@ -274,7 +274,11 @@ public class AnalysisBackgroundWorker : BackgroundService
         if (analysis != null)
         {
             var calculatedStatus = AnalysisStatusCalculator.Calculate(runsToEvaluate);
-            analysis.Status = calculatedStatus;
+            if (analysis.Status != calculatedStatus)
+            {
+                analysis.Status = calculatedStatus;
+                await runRepo.SaveChangesAsync(cancellationToken);
+            }
         }
     }
 
