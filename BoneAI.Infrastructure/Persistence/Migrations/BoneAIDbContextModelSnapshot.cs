@@ -28,12 +28,40 @@ namespace BoneAI.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("ArtifactPath")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
                     b.Property<string>("Description")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
+                    b.Property<string>("Framework")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("MockProvider");
+
                     b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<bool>("IsAvailable")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<string>("ModelKey")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasDefaultValue("mock-bone-fracture-v1");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -49,8 +77,12 @@ namespace BoneAI.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("IsActive");
 
-                    b.HasIndex("Name", "Version")
+                    b.HasIndex("IsAvailable");
+
+                    b.HasIndex("ModelKey", "Version")
                         .IsUnique();
+
+                    b.HasIndex("Name", "Version");
 
                     b.ToTable("AIModels", (string)null);
 
@@ -58,8 +90,12 @@ namespace BoneAI.Infrastructure.Persistence.Migrations
                         new
                         {
                             Id = new Guid("11111111-1111-1111-1111-111111111111"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             Description = "Development and contract-testing mock adapter for pediatric wrist fracture detection",
+                            Framework = "MockProvider",
                             IsActive = true,
+                            IsAvailable = true,
+                            ModelKey = "mock-bone-fracture-v1",
                             Name = "mock-bone-fracture-v1",
                             Version = "1.0.0"
                         });
@@ -78,6 +114,13 @@ namespace BoneAI.Infrastructure.Persistence.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<string>("Mode")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasDefaultValue("SingleModel");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(30)
@@ -93,6 +136,8 @@ namespace BoneAI.Infrastructure.Persistence.Migrations
                     b.HasIndex("IdempotencyKey")
                         .IsUnique()
                         .HasFilter("[IdempotencyKey] IS NOT NULL");
+
+                    b.HasIndex("Mode");
 
                     b.HasIndex("Status");
 

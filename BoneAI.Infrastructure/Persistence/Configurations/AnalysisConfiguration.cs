@@ -1,4 +1,5 @@
 using BoneAI.Domain.Entities;
+using BoneAI.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -15,6 +16,12 @@ public class AnalysisConfiguration : IEntityTypeConfiguration<Analysis>
         builder.Property(a => a.XRayImageId)
             .IsRequired();
 
+        builder.Property(a => a.Mode)
+            .IsRequired()
+            .HasConversion<string>()
+            .HasMaxLength(30)
+            .HasDefaultValue(AnalysisMode.SingleModel);
+
         builder.Property(a => a.Status)
             .IsRequired()
             .HasConversion<string>()
@@ -27,6 +34,7 @@ public class AnalysisConfiguration : IEntityTypeConfiguration<Analysis>
             .HasMaxLength(128);
 
         builder.HasIndex(a => a.XRayImageId);
+        builder.HasIndex(a => a.Mode);
         builder.HasIndex(a => a.Status);
         builder.HasIndex(a => a.CreatedAt);
 

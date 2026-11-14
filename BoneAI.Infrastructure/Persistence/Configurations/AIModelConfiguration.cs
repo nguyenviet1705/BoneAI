@@ -14,6 +14,11 @@ public class AIModelConfiguration : IEntityTypeConfiguration<AIModel>
 
         builder.HasKey(m => m.Id);
 
+        builder.Property(m => m.ModelKey)
+            .IsRequired()
+            .HasMaxLength(100)
+            .HasDefaultValue("mock-bone-fracture-v1");
+
         builder.Property(m => m.Name)
             .IsRequired()
             .HasMaxLength(100);
@@ -22,16 +27,35 @@ public class AIModelConfiguration : IEntityTypeConfiguration<AIModel>
             .IsRequired()
             .HasMaxLength(50);
 
+        builder.Property(m => m.Framework)
+            .IsRequired()
+            .HasMaxLength(50)
+            .HasDefaultValue("MockProvider");
+
         builder.Property(m => m.Description)
             .HasMaxLength(500);
 
+        builder.Property(m => m.ArtifactPath)
+            .HasMaxLength(500);
+
         builder.Property(m => m.IsActive)
+            .IsRequired()
+            .HasDefaultValue(true);
+
+        builder.Property(m => m.IsAvailable)
+            .IsRequired()
+            .HasDefaultValue(true);
+
+        builder.Property(m => m.CreatedAt)
             .IsRequired();
 
-        builder.HasIndex(m => new { m.Name, m.Version })
+        builder.HasIndex(m => new { m.ModelKey, m.Version })
             .IsUnique();
 
+        builder.HasIndex(m => new { m.Name, m.Version });
+
         builder.HasIndex(m => m.IsActive);
+        builder.HasIndex(m => m.IsAvailable);
 
         builder.HasMany(m => m.AnalysisRuns)
             .WithOne(r => r.AIModel)
@@ -42,10 +66,14 @@ public class AIModelConfiguration : IEntityTypeConfiguration<AIModel>
         builder.HasData(new AIModel
         {
             Id = Guid.Parse(DefaultMockModelId),
+            ModelKey = "mock-bone-fracture-v1",
             Name = "mock-bone-fracture-v1",
             Version = "1.0.0",
+            Framework = "MockProvider",
             Description = "Development and contract-testing mock adapter for pediatric wrist fracture detection",
-            IsActive = true
+            IsActive = true,
+            IsAvailable = true,
+            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
         });
     }
 }
