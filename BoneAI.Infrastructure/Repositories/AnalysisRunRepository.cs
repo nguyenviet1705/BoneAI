@@ -17,41 +17,43 @@ public class AnalysisRunRepository : IAnalysisRunRepository
 
     public async Task<AnalysisRun?> ClaimNextPendingRunAsync(TimeSpan leaseDuration, CancellationToken cancellationToken = default)
     {
-        var now = DateTime.UtcNow;
+        var strategy = _context.Database.CreateExecutionStrategy();
 
-        // Transactional claim to prevent multiple workers claiming the same run
-        await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
-
-        // Find candidate run (Pending, or abandoned Processing whose lease expired)
-        var run = await _context.AnalysisRuns
-            .Include(r => r.Analysis)
-                .ThenInclude(a => a!.XRayImage)
-            .Include(r => r.AIModel)
-            .Where(r => r.Status == AnalysisRunStatus.Pending ||
-                        (r.Status == AnalysisRunStatus.Processing && r.LeaseUntil != null && r.LeaseUntil < now))
-            .OrderBy(r => r.StartedAt ?? DateTime.MaxValue)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        if (run == null)
+        return await strategy.ExecuteAsync(async () =>
         {
-            await transaction.RollbackAsync(cancellationToken);
-            return null;
-        }
+            var now = DateTime.UtcNow;
 
-        // Atomically claim by setting LeaseUntil and Processing status
-        run.Status = AnalysisRunStatus.Processing;
-        run.LeaseUntil = now.Add(leaseDuration);
-        run.StartedAt ??= now;
+            await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
 
-        if (run.Analysis != null && run.Analysis.Status != AnalysisStatus.Processing)
-        {
-            run.Analysis.Status = AnalysisStatus.Processing;
-        }
+            var run = await _context.AnalysisRuns
+                .Include(r => r.Analysis)
+                    .ThenInclude(a => a!.XRayImage)
+                .Include(r => r.AIModel)
+                .Where(r => r.Status == AnalysisRunStatus.Pending ||
+                            (r.Status == AnalysisRunStatus.Processing && r.LeaseUntil != null && r.LeaseUntil < now))
+                .OrderBy(r => r.StartedAt ?? DateTime.MaxValue)
+                .FirstOrDefaultAsync(cancellationToken);
 
-        await _context.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
+            if (run == null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return null;
+            }
 
-        return run;
+            run.Status = AnalysisRunStatus.Processing;
+            run.LeaseUntil = now.Add(leaseDuration);
+            run.StartedAt ??= now;
+
+            if (run.Analysis != null && run.Analysis.Status != AnalysisStatus.Processing)
+            {
+                run.Analysis.Status = AnalysisStatus.Processing;
+            }
+
+            await _context.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            return run;
+        });
     }
 
     public async Task<AnalysisRun?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
@@ -71,7 +73,6 @@ public class AnalysisRunRepository : IAnalysisRunRepository
 
     public async Task SaveDetectionsAsync(Guid runId, IEnumerable<Detection> detections, CancellationToken cancellationToken = default)
     {
-        // Enforce idempotency: remove existing detections for this run if any
         var existing = await _context.Detections
             .Where(d => d.AnalysisRunId == runId)
             .ToListAsync(cancellationToken);
