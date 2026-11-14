@@ -1,3 +1,5 @@
+using BoneAI.Application.Interfaces;
+using BoneAI.Application.Services;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace BoneAI.Application.DependencyInjection;
@@ -6,7 +8,7 @@ public static class ApplicationServiceExtensions
 {
     public static IServiceCollection AddApplicationServices(this IServiceCollection services)
     {
-        // Service registrations for Application layer
+        services.AddScoped<IImageService, ImageService>();
         return services;
     }
 }
