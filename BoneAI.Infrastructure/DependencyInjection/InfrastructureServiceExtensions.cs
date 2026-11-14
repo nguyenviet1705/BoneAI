@@ -1,4 +1,8 @@
+using BoneAI.Application.Interfaces;
+using BoneAI.Infrastructure.Configuration;
 using BoneAI.Infrastructure.Persistence;
+using BoneAI.Infrastructure.Repositories;
+using BoneAI.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -21,6 +25,14 @@ public static class InfrastructureServiceExtensions
                     maxRetryDelay: TimeSpan.FromSeconds(5),
                     errorNumbersToAdd: null);
             }));
+
+        // Configure Image Storage Options
+        services.Configure<ImageStorageOptions>(configuration.GetSection(ImageStorageOptions.SectionName));
+
+        // Register Storage, Validation, and Persistence Services
+        services.AddScoped<IXRayImageRepository, XRayImageRepository>();
+        services.AddSingleton<IImageStorageService, LocalImageStorageService>();
+        services.AddSingleton<IImageValidator, ImageValidator>();
 
         return services;
     }
