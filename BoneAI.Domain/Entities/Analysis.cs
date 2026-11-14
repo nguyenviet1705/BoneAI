@@ -6,7 +6,8 @@ public class Analysis
 {
     public Guid Id { get; set; }
     public Guid XRayImageId { get; set; }
-    public AnalysisStatus Status { get; set; }
+    public AnalysisMode Mode { get; set; } = AnalysisMode.SingleModel;
+    public AnalysisStatus Status { get; set; } = AnalysisStatus.Pending;
     public DateTime CreatedAt { get; set; }
     public string? IdempotencyKey { get; set; }
 
