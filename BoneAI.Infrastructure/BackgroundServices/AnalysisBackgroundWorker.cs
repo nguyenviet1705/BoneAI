@@ -80,12 +80,22 @@ public class AnalysisBackgroundWorker : BackgroundService
         _logger.LogInformation("Claimed AnalysisRun {RunId} for Analysis {AnalysisId}, Model: {ModelName}",
             runId, run.AnalysisId, run.AIModel?.Name);
 
-        // Process asynchronously without blocking the dispatch loop
+        // Process asynchronously on worker thread pool
         _ = Task.Run(async () =>
         {
             try
             {
-                await ProcessClaimedJobAsync(runId, cancellationToken);
+                using var workerScope = _scopeFactory.CreateScope();
+                var scopedRunRepo = workerScope.ServiceProvider.GetRequiredService<IAnalysisRunRepository>();
+                var scopedAnalysisRepo = workerScope.ServiceProvider.GetRequiredService<IAnalysisRepository>();
+                var scopedStorageService = workerScope.ServiceProvider.GetRequiredService<IImageStorageService>();
+                var scopedAiClient = workerScope.ServiceProvider.GetRequiredService<IAIServiceClient>();
+
+                var scopedRun = await scopedRunRepo.GetByIdAsync(runId, cancellationToken);
+                if (scopedRun != null)
+                {
+                    await ExecuteRunInScopeAsync(scopedRun, scopedRunRepo, scopedAnalysisRepo, scopedStorageService, scopedAiClient, cancellationToken);
+                }
             }
             catch (Exception ex)
             {
@@ -102,9 +112,11 @@ public class AnalysisBackgroundWorker : BackgroundService
 
     public async Task<bool> ProcessNextJobAsync(CancellationToken cancellationToken)
     {
-        // Direct synchronous processing method used by tests
         using var scope = _scopeFactory.CreateScope();
         var runRepo = scope.ServiceProvider.GetRequiredService<IAnalysisRunRepository>();
+        var analysisRepo = scope.ServiceProvider.GetRequiredService<IAnalysisRepository>();
+        var storageService = scope.ServiceProvider.GetRequiredService<IImageStorageService>();
+        var aiClient = scope.ServiceProvider.GetRequiredService<IAIServiceClient>();
 
         var run = await runRepo.ClaimNextPendingRunAsync(TimeSpan.FromMinutes(2), cancellationToken);
         if (run == null)
@@ -112,25 +124,18 @@ public class AnalysisBackgroundWorker : BackgroundService
             return false;
         }
 
-        await ProcessClaimedJobAsync(run.Id, cancellationToken);
+        await ExecuteRunInScopeAsync(run, runRepo, analysisRepo, storageService, aiClient, cancellationToken);
         return true;
     }
 
-    private async Task ProcessClaimedJobAsync(Guid runId, CancellationToken cancellationToken)
+    private async Task ExecuteRunInScopeAsync(
+        AnalysisRun run,
+        IAnalysisRunRepository runRepo,
+        IAnalysisRepository analysisRepo,
+        IImageStorageService storageService,
+        IAIServiceClient aiClient,
+        CancellationToken cancellationToken)
     {
-        using var scope = _scopeFactory.CreateScope();
-        var runRepo = scope.ServiceProvider.GetRequiredService<IAnalysisRunRepository>();
-        var analysisRepo = scope.ServiceProvider.GetRequiredService<IAnalysisRepository>();
-        var storageService = scope.ServiceProvider.GetRequiredService<IImageStorageService>();
-        var aiClient = scope.ServiceProvider.GetRequiredService<IAIServiceClient>();
-
-        var run = await runRepo.GetByIdAsync(runId, cancellationToken);
-        if (run == null)
-        {
-            _logger.LogWarning("AnalysisRun {RunId} could not be reloaded after claiming.", runId);
-            return;
-        }
-
         var analysis = run.Analysis;
         var xRayImage = analysis?.XRayImage;
 
@@ -201,10 +206,10 @@ public class AnalysisBackgroundWorker : BackgroundService
             run.ErrorMessage = null;
             run.LeaseUntil = null;
 
-            await runRepo.SaveChangesAsync(cancellationToken);
-
             // Recalculate aggregate status across all sibling runs
-            await UpdateAggregateAnalysisStatusAsync(run.AnalysisId, runRepo, analysisRepo, cancellationToken);
+            await UpdateAggregateAnalysisStatusAsync(run, runRepo, analysisRepo, cancellationToken);
+
+            await runRepo.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation("Successfully completed AnalysisRun {RunId} with {Count} detections in {Ms}ms",
                 run.Id, detections.Count, response.ProcessingTimeMs);
@@ -250,29 +255,26 @@ public class AnalysisBackgroundWorker : BackgroundService
         run.ErrorMessage = errorMessage.Length > 2000 ? errorMessage[..2000] : errorMessage;
         run.LeaseUntil = null;
 
-        await runRepo.SaveChangesAsync(cancellationToken);
-
         // Recalculate aggregate status across all sibling runs
-        await UpdateAggregateAnalysisStatusAsync(run.AnalysisId, runRepo, analysisRepo, cancellationToken);
+        await UpdateAggregateAnalysisStatusAsync(run, runRepo, analysisRepo, cancellationToken);
+
+        await runRepo.SaveChangesAsync(cancellationToken);
     }
 
     private static async Task UpdateAggregateAnalysisStatusAsync(
-        Guid analysisId,
+        AnalysisRun run,
         IAnalysisRunRepository runRepo,
         IAnalysisRepository analysisRepo,
         CancellationToken cancellationToken)
     {
-        var siblingRuns = await runRepo.GetRunsByAnalysisIdAsync(analysisId, cancellationToken);
-        var analysis = await analysisRepo.GetByIdAsync(analysisId, cancellationToken);
+        var siblingRuns = await runRepo.GetRunsByAnalysisIdAsync(run.AnalysisId, cancellationToken);
+        var runsToEvaluate = (siblingRuns != null && siblingRuns.Count > 0) ? siblingRuns : new[] { run };
 
-        if (analysis != null && siblingRuns.Count > 0)
+        var analysis = run.Analysis ?? await analysisRepo.GetByIdAsync(run.AnalysisId, cancellationToken);
+        if (analysis != null)
         {
-            var calculatedStatus = AnalysisStatusCalculator.Calculate(siblingRuns);
-            if (analysis.Status != calculatedStatus)
-            {
-                analysis.Status = calculatedStatus;
-                await analysisRepo.SaveChangesAsync(cancellationToken);
-            }
+            var calculatedStatus = AnalysisStatusCalculator.Calculate(runsToEvaluate);
+            analysis.Status = calculatedStatus;
         }
     }
 
