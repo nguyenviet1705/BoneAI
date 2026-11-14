@@ -30,8 +30,9 @@ public class ImagesController : ControllerBase
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status413PayloadTooLarge)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status415UnsupportedMediaType)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> Upload([FromForm] IFormFile? file, CancellationToken cancellationToken)
+    public async Task<IActionResult> Upload([FromForm] UploadImageDto dto, CancellationToken cancellationToken)
     {
+        var file = dto?.File;
         if (file == null || file.Length == 0)
         {
             throw new ValidationException("An image file must be provided in the request form-data.");

@@ -9,7 +9,32 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddApplicationServices();
 builder.Services.AddInfrastructureServices(builder.Configuration);
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .ConfigureApiBehaviorOptions(options =>
+    {
+        options.InvalidModelStateResponseFactory = context =>
+        {
+            var errors = context.ModelState.Values
+                .SelectMany(v => v.Errors)
+                .Select(e => e.ErrorMessage)
+                .Where(m => !string.IsNullOrWhiteSpace(m))
+                .ToList();
+
+            var message = errors.Count > 0
+                ? string.Join("; ", errors)
+                : "Invalid request payload.";
+
+            var errorResponse = new BoneAI.API.Models.ErrorResponse
+            {
+                StatusCode = StatusCodes.Status400BadRequest,
+                Message = message,
+                TraceId = context.HttpContext.TraceIdentifier,
+                Details = null
+            };
+
+            return new Microsoft.AspNetCore.Mvc.BadRequestObjectResult(errorResponse);
+        };
+    });
 
 // Configure Swagger/OpenAPI
 builder.Services.AddEndpointsApiExplorer();
@@ -45,3 +70,6 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+public partial class Program { }
+
