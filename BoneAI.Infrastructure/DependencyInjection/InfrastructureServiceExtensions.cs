@@ -43,6 +43,9 @@ public static class InfrastructureServiceExtensions
         services.AddSingleton<IImageStorageService, LocalImageStorageService>();
         services.AddSingleton<IImageValidator, ImageValidator>();
 
+        // Register Durable Background Worker
+        services.AddHostedService<BoneAI.Infrastructure.BackgroundServices.AnalysisBackgroundWorker>();
+
         return services;
     }
 }
