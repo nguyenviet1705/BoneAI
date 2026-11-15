@@ -118,9 +118,10 @@ export const ResultPage: React.FC = () => {
     ? imageService.getImageFileUrl(analysis.originalImage?.imageId || analysis.imageId)
     : '';
 
-  // URL ảnh kết quả thực tế từ rendering service của backend
-  const resultImageUrl = activeRun?.runId
-    ? analysisService.getRunResultImageUrl(activeRun.runId)
+  // URL ảnh kết quả thực tế từ rendering service của backend (thêm cache-buster timestamp để luôn nạp ảnh mới nhất)
+  const isRunCompleted = activeRun?.status === 'Completed';
+  const resultImageUrl = isRunCompleted && activeRun?.runId
+    ? `${analysisService.getRunResultImageUrl(activeRun.runId)}?v=${new Date(activeRun.completedAt || Date.now()).getTime()}`
     : originalImageUrl;
 
   const isMultiModel = analysis.runs.length > 1;
@@ -236,11 +237,13 @@ export const ResultPage: React.FC = () => {
             <div className="h-full">
               <XRayImageViewer
                 title={`Ảnh sau phát hiện (${activeRun?.model?.modelName || 'AI'})`}
-                imageUrl={resultImageUrl || originalImageUrl}
+                imageUrl={resultImageUrl}
+                fallbackUrl={originalImageUrl}
+                isProcessing={!isRunCompleted && (isOverallProcessing || activeRun?.status === 'Processing')}
                 detections={activeRun?.detections || []}
                 highlightedDetectionId={highlightedDetectionId}
                 onHoverDetection={setHighlightedDetectionId}
-                showDetections={true}
+                showDetections={false}
               />
             </div>
 
