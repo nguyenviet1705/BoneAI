@@ -46,6 +46,13 @@ builder.Services.AddSwaggerGen(options =>
         Version = "v1",
         Description = "Backend API for BoneAI - Pediatric Wrist Fracture Detection System"
     });
+
+    var xmlFilename = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
+    var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFilename);
+    if (File.Exists(xmlPath))
+    {
+        options.IncludeXmlComments(xmlPath);
+    }
 });
 
 var app = builder.Build();
