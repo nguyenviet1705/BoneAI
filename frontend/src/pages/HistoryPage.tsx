@@ -9,19 +9,23 @@ import {
   Trash2, 
   ChevronDown, 
   RefreshCw,
-  AlertTriangle
+  AlertTriangle,
+  Layers,
+  ArrowRight
 } from 'lucide-react';
 import { historyService } from '../api/historyService';
+import { modelService } from '../api/modelService';
 import { imageService } from '../api/imageService';
 import type { 
   AnalysisHistoryItemDto, 
   PaginationMetadataDto 
 } from '../types/history.types';
+import type { AIModel } from '../types/model.types';
 
 export const HistoryPage: React.FC = () => {
   const navigate = useNavigate();
 
-  // State danh sách & phân trang
+  // State danh sách & phân trang thực tế từ Backend
   const [items, setItems] = useState<AnalysisHistoryItemDto[]>([]);
   const [pagination, setPagination] = useState<PaginationMetadataDto>({
     page: 1,
@@ -32,24 +36,35 @@ export const HistoryPage: React.FC = () => {
     hasPreviousPage: false,
   });
 
+  // State danh sách model thực tế từ Backend để lọc
+  const [availableModels, setAvailableModels] = useState<AIModel[]>([]);
+
   // State bộ lọc
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [modelFilter, setModelFilter] = useState<string>('');
-  const [timeFilter, setTimeFilter] = useState<string>('all');
   const [currentPage, setCurrentPage] = useState<number>(1);
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
 
-  // Load danh sách lịch sử từ Backend API
+  // Load danh sách AI models thực tế từ Backend để đưa vào bộ lọc
+  useEffect(() => {
+    modelService.getModels()
+      .then((models) => setAvailableModels(models))
+      .catch((err) => console.error('Không thể tải danh sách model:', err));
+  }, []);
+
+  // Load danh sách lịch sử thực tế từ Backend API
   useEffect(() => {
     fetchHistory();
   }, [currentPage, statusFilter, modelFilter]);
 
   const fetchHistory = async () => {
     setIsLoading(true);
+    setErrorMessage(null);
     try {
       const res = await historyService.getHistory({
         page: currentPage,
@@ -60,107 +75,47 @@ export const HistoryPage: React.FC = () => {
         sortOrder: 'desc',
       });
 
-      if (res && res.items && res.items.length > 0) {
+      if (res && res.items) {
         setItems(res.items);
-        setPagination(res.pagination);
+        setPagination(res.pagination || {
+          page: currentPage,
+          pageSize: 10,
+          totalItems: res.items.length,
+          totalPages: Math.ceil(res.items.length / 10) || 1,
+          hasNextPage: false,
+          hasPreviousPage: false,
+        });
       } else {
-        setFallbackHistory();
+        setItems([]);
       }
-    } catch (err) {
-      console.warn('Lỗi khi tải lịch sử từ API, sử dụng dữ liệu mẫu thiết kế:', err);
-      setFallbackHistory();
+    } catch (err: any) {
+      console.error('Lỗi khi tải lịch sử từ API:', err);
+      setErrorMessage(err.message || 'Không thể kết nối đến máy chủ để lấy dữ liệu lịch sử phân tích.');
+      setItems([]);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Dữ liệu mẫu chuẩn xác theo màn hình số 6 của thiết kế
-  const setFallbackHistory = () => {
-    const mockItems: AnalysisHistoryItemDto[] = [
-      {
-        analysisId: 'ana-001',
-        imageId: 'img-001',
-        originalImageUrl: '/api/images/img-001/file',
-        fileName: 'wrist_001.jpg',
-        createdAt: '2025-06-14T14:32:00Z',
-        modelName: 'YOLOv8m',
-        detectionCount: 2,
-        status: 'Completed',
-        modelCount: 1,
-        completedModelCount: 1,
-        failedModelCount: 0,
-      },
-      {
-        analysisId: 'ana-002',
-        imageId: 'img-002',
-        originalImageUrl: '/api/images/img-002/file',
-        fileName: 'wrist_002.jpg',
-        createdAt: '2025-06-14T13:45:00Z',
-        modelName: 'YOLOv11',
-        detectionCount: 1,
-        status: 'Completed',
-        modelCount: 1,
-        completedModelCount: 1,
-        failedModelCount: 0,
-      },
-      {
-        analysisId: 'ana-003',
-        imageId: 'img-003',
-        originalImageUrl: '/api/images/img-003/file',
-        fileName: 'wrist_003.jpg',
-        createdAt: '2025-06-13T16:20:00Z',
-        modelName: 'YOLOv26',
-        detectionCount: 3,
-        status: 'Completed',
-        modelCount: 1,
-        completedModelCount: 1,
-        failedModelCount: 0,
-      },
-      {
-        analysisId: 'ana-004',
-        imageId: 'img-004',
-        originalImageUrl: '/api/images/img-004/file',
-        fileName: 'wrist_004.jpg',
-        createdAt: '2025-06-13T15:17:00Z',
-        modelName: 'Faster R-CNN',
-        detectionCount: 1,
-        status: 'Completed',
-        modelCount: 1,
-        completedModelCount: 1,
-        failedModelCount: 0,
-      },
-    ];
-
-    setItems(mockItems);
-    setPagination({
-      page: 1,
-      pageSize: 4,
-      totalItems: 42,
-      totalPages: 11,
-      hasNextPage: true,
-      hasPreviousPage: false,
-    });
-  };
-
-  // Xóa mục lịch sử
+  // Xóa mục lịch sử thực tế trên Database
   const handleConfirmDelete = async () => {
     if (!deleteId) return;
     setIsDeleting(true);
     try {
       await historyService.deleteHistory(deleteId);
-      setItems((prev) => prev.filter((item) => item.analysisId !== deleteId));
+      // Cập nhật lại danh sách thực tế sau khi xóa
+      await fetchHistory();
       setDeleteId(null);
-    } catch {
-      // Local removal
-      setItems((prev) => prev.filter((item) => item.analysisId !== deleteId));
-      setDeleteId(null);
+    } catch (err: any) {
+      alert(`Xóa thất bại: ${err.message || 'Lỗi không xác định'}`);
     } finally {
       setIsDeleting(false);
     }
   };
 
   // Format ngày giờ: 14/06/2025 14:32
-  const formatDate = (isoString: string): string => {
+  const formatDate = (isoString?: string): string => {
+    if (!isoString) return '-';
     try {
       const date = new Date(isoString);
       const pad = (n: number) => n.toString().padStart(2, '0');
@@ -175,11 +130,14 @@ export const HistoryPage: React.FC = () => {
     }
   };
 
-  // Lọc theo search input client-side nếu có
+  // Lọc theo search input client-side theo ID hoặc tên
   const filteredItems = items.filter((item) => {
     if (!searchQuery.trim()) return true;
-    const name = item.fileName || item.imageId || '';
-    return name.toLowerCase().includes(searchQuery.toLowerCase());
+    const q = searchQuery.toLowerCase();
+    const id = item.analysisId.toLowerCase();
+    const imgId = item.imageId.toLowerCase();
+    const fileName = (item.fileName || '').toLowerCase();
+    return id.includes(q) || imgId.includes(q) || fileName.includes(q);
   });
 
   return (
@@ -192,7 +150,7 @@ export const HistoryPage: React.FC = () => {
             <span>Lịch sử phân tích</span>
           </h1>
           <p className="text-xs text-slate-500 mt-1 font-medium">
-            Xem lại các kết quả phân tích trước đây
+            Xem lại các kết quả phân tích thực tế từ cơ sở dữ liệu
           </p>
         </div>
 
@@ -203,14 +161,14 @@ export const HistoryPage: React.FC = () => {
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="Tìm kiếm theo tên ảnh..."
+              placeholder="Tìm theo ID ảnh hoặc phiên..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-white border border-slate-200 text-xs rounded-xl pl-9 pr-3 py-2 text-slate-700 placeholder-slate-400 shadow-xs hover:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             />
           </div>
 
-          {/* Model Filter */}
+          {/* Model Filter (Binding danh sách model thật) */}
           <div className="relative">
             <select
               value={modelFilter}
@@ -221,30 +179,16 @@ export const HistoryPage: React.FC = () => {
               className="appearance-none bg-white border border-slate-200 text-xs font-semibold text-slate-700 py-2 pl-3 pr-8 rounded-xl shadow-xs hover:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
             >
               <option value="">Tất cả model</option>
-              <option value="yolov8m">YOLOv8m</option>
-              <option value="yolov11">YOLOv11</option>
-              <option value="yolov26">YOLOv26</option>
-              <option value="faster_rcnn">Faster R-CNN</option>
+              {availableModels.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
             </select>
             <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           </div>
 
-          {/* Time Filter */}
-          <div className="relative">
-            <select
-              value={timeFilter}
-              onChange={(e) => setTimeFilter(e.target.value)}
-              className="appearance-none bg-white border border-slate-200 text-xs font-semibold text-slate-700 py-2 pl-3 pr-8 rounded-xl shadow-xs hover:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
-            >
-              <option value="all">Thời gian: Tất cả</option>
-              <option value="today">Hôm nay</option>
-              <option value="7days">7 ngày qua</option>
-              <option value="30days">30 ngày qua</option>
-            </select>
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-          </div>
-
-          {/* Status Filter */}
+          {/* Status Filter (Binding enum trạng thái thật) */}
           <div className="relative">
             <select
               value={statusFilter}
@@ -255,14 +199,42 @@ export const HistoryPage: React.FC = () => {
               className="appearance-none bg-white border border-slate-200 text-xs font-semibold text-slate-700 py-2 pl-3 pr-8 rounded-xl shadow-xs hover:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
             >
               <option value="">Trạng thái: Tất cả</option>
-              <option value="Completed">Thành công</option>
-              <option value="Processing">Đang xử lý</option>
-              <option value="Failed">Thất bại</option>
+              <option value="Completed">Hoàn thành (Completed)</option>
+              <option value="Processing">Đang xử lý (Processing)</option>
+              <option value="PartiallyCompleted">Một phần (PartiallyCompleted)</option>
+              <option value="Failed">Thất bại (Failed)</option>
             </select>
             <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           </div>
+
+          {/* Refresh button */}
+          <button
+            type="button"
+            onClick={fetchHistory}
+            title="Làm mới dữ liệu từ Database"
+            className="p-2 bg-white border border-slate-200 text-slate-600 hover:text-blue-600 rounded-xl shadow-xs transition-colors"
+          >
+            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-blue-600' : ''}`} />
+          </button>
         </div>
       </div>
+
+      {/* Error alert nếu kết nối API lỗi */}
+      {errorMessage && (
+        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{errorMessage}</span>
+          </div>
+          <button
+            type="button"
+            onClick={fetchHistory}
+            className="px-3 py-1 bg-white border border-rose-200 text-rose-700 font-bold rounded-lg hover:bg-rose-100"
+          >
+            Thử lại
+          </button>
+        </div>
+      )}
 
       {/* Main Table Container */}
       <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-4">
@@ -271,10 +243,10 @@ export const HistoryPage: React.FC = () => {
             <thead>
               <tr className="border-b border-slate-100 text-slate-400 font-semibold uppercase text-[10px]">
                 <th className="py-3 px-3 w-14">Ảnh</th>
-                <th className="py-3 px-3">Tên ảnh</th>
-                <th className="py-3 px-3">Thời gian</th>
-                <th className="py-3 px-3">Model</th>
-                <th className="py-3 px-3 text-center">Số vùng nghi ngờ</th>
+                <th className="py-3 px-3">Mã phân tích / Ảnh</th>
+                <th className="py-3 px-3">Thời gian tạo</th>
+                <th className="py-3 px-3">Mô hình AI</th>
+                <th className="py-3 px-3 text-center">Tiến độ chạy</th>
                 <th className="py-3 px-3">Trạng thái</th>
                 <th className="py-3 px-3 text-right">Thao tác</th>
               </tr>
@@ -284,14 +256,25 @@ export const HistoryPage: React.FC = () => {
                 <tr>
                   <td colSpan={7} className="py-12 text-center text-slate-400">
                     <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-blue-600" />
-                    Đang tải danh sách lịch sử phân tích...
+                    Đang tải dữ liệu thực tế từ cơ sở dữ liệu...
                   </td>
                 </tr>
               ) : filteredItems.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="py-12 text-center text-slate-400">
                     <History className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                    Không tìm thấy bản ghi lịch sử nào phù hợp với bộ lọc.
+                    <p className="font-semibold text-slate-600">Chưa có lượt phân tích nào trong cơ sở dữ liệu.</p>
+                    <p className="text-[11px] text-slate-400 mt-1 max-w-sm mx-auto">
+                      Hãy tải ảnh X-quang lên và bắt đầu phân tích để lưu lịch sử chẩn đoán.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => navigate('/analyze')}
+                      className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl inline-flex items-center gap-1.5 shadow-sm"
+                    >
+                      <span>Bắt đầu phân tích ảnh ngay</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
                   </td>
                 </tr>
               ) : (
@@ -300,10 +283,11 @@ export const HistoryPage: React.FC = () => {
                     ? item.originalImageUrl
                     : item.imageId
                     ? imageService.getImageFileUrl(item.imageId)
-                    : 'https://placehold.co/100x100/0d1b3e/ffffff?text=X-Ray';
+                    : '';
 
                   const isSuccess = item.status === 'Completed';
                   const isProcessing = item.status === 'Processing' || item.status === 'Pending';
+                  const isPartial = item.status === 'PartiallyCompleted';
                   const isFailed = item.status === 'Failed';
 
                   return (
@@ -312,26 +296,34 @@ export const HistoryPage: React.FC = () => {
                       className="hover:bg-slate-50/70 transition-colors group cursor-pointer"
                       onClick={() => navigate(`/results/${item.analysisId}`)}
                     >
-                      {/* Thumbnail */}
+                      {/* Thumbnail thật từ Backend */}
                       <td className="py-3 px-3">
-                        <div className="w-10 h-10 rounded-lg overflow-hidden bg-slate-900 border border-slate-200/80 shadow-inner flex items-center justify-center">
-                          <img
-                            src={imageUrl}
-                            alt={item.fileName || 'X-Ray'}
-                            className="w-full h-full object-cover"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).src =
-                                'https://placehold.co/100x100/0d1b3e/ffffff?text=X-Ray';
-                            }}
-                          />
+                        <div className="w-10 h-10 rounded-lg overflow-hidden bg-slate-900 border border-slate-200/80 shadow-inner flex items-center justify-center shrink-0">
+                          {imageUrl ? (
+                            <img
+                              src={imageUrl}
+                              alt="X-Ray"
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                (e.target as HTMLElement).style.display = 'none';
+                              }}
+                            />
+                          ) : (
+                            <span className="text-[9px] font-mono text-slate-400">RX</span>
+                          )}
                         </div>
                       </td>
 
-                      {/* File Name */}
+                      {/* File Name / Analysis ID */}
                       <td className="py-3 px-3">
-                        <span className="font-bold text-slate-800 group-hover:text-blue-600 transition-colors">
-                          {item.fileName || `xray_${item.imageId.slice(0, 8)}.jpg`}
-                        </span>
+                        <div className="space-y-0.5">
+                          <p className="font-bold text-slate-800 group-hover:text-blue-600 transition-colors">
+                            {item.fileName || `Ca chẩn đoán #${item.analysisId.slice(0, 8)}`}
+                          </p>
+                          <p className="font-mono text-[10px] text-slate-400">
+                            Ảnh: {item.imageId.slice(0, 8)}...
+                          </p>
+                        </div>
                       </td>
 
                       {/* Time */}
@@ -339,36 +331,43 @@ export const HistoryPage: React.FC = () => {
                         {formatDate(item.createdAt)}
                       </td>
 
-                      {/* Model */}
+                      {/* Model Count / Name */}
                       <td className="py-3 px-3">
-                        <span className="font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md text-[11px]">
-                          {item.modelName || (item.modelCount > 1 ? `Đa mô hình (${item.modelCount})` : 'YOLOv8m')}
+                        <span className="inline-flex items-center gap-1 font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md text-[11px]">
+                          <Layers className="w-3 h-3 text-slate-400" />
+                          <span>{item.modelCount > 1 ? `Đa mô hình (${item.modelCount})` : '1 mô hình'}</span>
                         </span>
                       </td>
 
-                      {/* Detections Count */}
+                      {/* Model Runs Progress */}
                       <td className="py-3 px-3 text-center">
-                        <span className="font-bold text-slate-800 bg-slate-50 px-2 py-0.5 rounded-full">
-                          {item.detectionCount ?? 1}
+                        <span className="font-bold text-slate-700 bg-slate-50 px-2.5 py-0.5 rounded-full text-[11px] border border-slate-200/60">
+                          {item.completedModelCount} / {item.modelCount} hoàn tất
                         </span>
                       </td>
 
                       {/* Status Badge */}
                       <td className="py-3 px-3">
                         {isSuccess && (
-                          <span className="inline-flex items-center gap-1.5 text-emerald-600 font-bold text-[11px]">
+                          <span className="inline-flex items-center gap-1.5 text-emerald-600 font-bold text-[11px] bg-emerald-50 px-2.5 py-1 rounded-full">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
                             Thành công
                           </span>
                         )}
                         {isProcessing && (
-                          <span className="inline-flex items-center gap-1.5 text-blue-600 font-bold text-[11px]">
+                          <span className="inline-flex items-center gap-1.5 text-blue-600 font-bold text-[11px] bg-blue-50 px-2.5 py-1 rounded-full">
                             <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
                             Đang xử lý
                           </span>
                         )}
+                        {isPartial && (
+                          <span className="inline-flex items-center gap-1.5 text-amber-600 font-bold text-[11px] bg-amber-50 px-2.5 py-1 rounded-full">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                            Một phần
+                          </span>
+                        )}
                         {isFailed && (
-                          <span className="inline-flex items-center gap-1.5 text-rose-600 font-bold text-[11px]">
+                          <span className="inline-flex items-center gap-1.5 text-rose-600 font-bold text-[11px] bg-rose-50 px-2.5 py-1 rounded-full">
                             <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
                             Thất bại
                           </span>
@@ -404,24 +403,24 @@ export const HistoryPage: React.FC = () => {
           </table>
         </div>
 
-        {/* Footer Pagination */}
+        {/* Footer Pagination với dữ liệu phân trang thật từ Backend */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-100 text-xs text-slate-500 font-medium">
           <div>
-            Hiển thị <strong className="text-slate-800">{items.length > 0 ? (currentPage - 1) * pagination.pageSize + 1 : 0}</strong> - <strong className="text-slate-800">{Math.min(currentPage * pagination.pageSize, pagination.totalItems)}</strong> / <strong className="text-slate-800">{pagination.totalItems}</strong> kết quả
+            Hiển thị <strong className="text-slate-800">{items.length > 0 ? (currentPage - 1) * pagination.pageSize + 1 : 0}</strong> - <strong className="text-slate-800">{Math.min(currentPage * pagination.pageSize, pagination.totalItems)}</strong> / <strong className="text-slate-800">{pagination.totalItems}</strong> kết quả từ cơ sở dữ liệu
           </div>
 
           {/* Page numbers */}
           <div className="flex items-center gap-1">
             <button
               type="button"
-              disabled={currentPage <= 1}
+              disabled={currentPage <= 1 || !pagination.hasPreviousPage}
               onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
               className="w-8 h-8 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
 
-            {Array.from({ length: Math.min(pagination.totalPages || 3, 5) }, (_, i) => i + 1).map((pageNum) => (
+            {Array.from({ length: Math.max(pagination.totalPages, 1) }, (_, i) => i + 1).map((pageNum) => (
               <button
                 key={pageNum}
                 type="button"
@@ -436,13 +435,9 @@ export const HistoryPage: React.FC = () => {
               </button>
             ))}
 
-            {pagination.totalPages > 5 && (
-              <span className="px-1 text-slate-400">...</span>
-            )}
-
             <button
               type="button"
-              disabled={currentPage >= pagination.totalPages}
+              disabled={currentPage >= pagination.totalPages || !pagination.hasNextPage}
               onClick={() => setCurrentPage((p) => Math.min(p + 1, pagination.totalPages))}
               className="w-8 h-8 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
@@ -465,7 +460,7 @@ export const HistoryPage: React.FC = () => {
                 Xóa lịch sử phân tích?
               </h3>
               <p className="text-xs text-slate-500">
-                Bản ghi này sẽ bị xóa khỏi danh sách lịch sử. Hành động này không thể hoàn tác.
+                Bản ghi này sẽ bị xóa mềm khỏi cơ sở dữ liệu và dọn dẹp các ảnh kết quả liên quan.
               </p>
             </div>
 
