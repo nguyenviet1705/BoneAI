@@ -33,10 +33,19 @@ public class AnalysisConfiguration : IEntityTypeConfiguration<Analysis>
         builder.Property(a => a.IdempotencyKey)
             .HasMaxLength(128);
 
+        builder.Property(a => a.IsDeleted)
+            .IsRequired()
+            .HasDefaultValue(false);
+
+        builder.Property(a => a.DeletedAt);
+
         builder.HasIndex(a => a.XRayImageId);
         builder.HasIndex(a => a.Mode);
         builder.HasIndex(a => a.Status);
         builder.HasIndex(a => a.CreatedAt);
+        builder.HasIndex(a => a.IsDeleted);
+
+        builder.HasQueryFilter(a => !a.IsDeleted);
 
         builder.HasIndex(a => a.IdempotencyKey)
             .IsUnique()

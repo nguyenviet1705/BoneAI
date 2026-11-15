@@ -10,6 +10,8 @@ public class Analysis
     public AnalysisStatus Status { get; set; } = AnalysisStatus.Pending;
     public DateTime CreatedAt { get; set; }
     public string? IdempotencyKey { get; set; }
+    public bool IsDeleted { get; set; } = false;
+    public DateTime? DeletedAt { get; set; }
 
     public XRayImage? XRayImage { get; set; }
     public ICollection<AnalysisRun> AnalysisRuns { get; set; } = new List<AnalysisRun>();

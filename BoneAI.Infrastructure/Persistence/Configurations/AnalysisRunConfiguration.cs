@@ -60,5 +60,7 @@ public class AnalysisRunConfiguration : IEntityTypeConfiguration<AnalysisRun>
             .WithOne(d => d.AnalysisRun)
             .HasForeignKey(d => d.AnalysisRunId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasQueryFilter(r => !r.Analysis!.IsDeleted);
     }
 }
