@@ -45,6 +45,7 @@ public class XRayImageRepository : IXRayImageRepository
     public async Task<bool> HasAnalysisReferencesAsync(Guid id, CancellationToken cancellationToken = default)
     {
         return await _context.Analyses
+            .IgnoreQueryFilters()
             .AnyAsync(a => a.XRayImageId == id, cancellationToken);
     }
 
