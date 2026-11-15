@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Any, List, Optional
 from PIL import Image
 from app.inference.interfaces.base_adapter import BaseInferenceAdapter
 from app.schemas.inference import BoundingBox, DetectionResult
@@ -40,11 +40,16 @@ class MockInferenceAdapter(BaseInferenceAdapter):
     def unload(self) -> None:
         self._is_loaded = False
 
-    def predict(self, image: Image.Image, run_id: str) -> List[DetectionResult]:
+    def predict(self, image: Any, run_id: str) -> List[DetectionResult]:
         if not self._is_loaded:
             raise RuntimeError(f"Model adapter '{self.model_key}' must be loaded before running inference.")
 
-        w, h = image.size
+        if isinstance(image, Image.Image):
+            w, h = image.size
+        elif hasattr(image, "shape"):
+            h, w = image.shape[:2]
+        else:
+            w, h = 640, 640
 
         # Compute safe bounding box located in wrist area (proportional to image size)
         x = round(w * self.box_offset_x, 2)

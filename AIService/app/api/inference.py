@@ -2,7 +2,9 @@ import asyncio
 import io
 import time
 from typing import Optional
+import cv2
 from fastapi import APIRouter, File, Form, UploadFile
+import numpy as np
 from PIL import Image, UnidentifiedImageError
 from starlette.concurrency import run_in_threadpool
 
@@ -43,14 +45,27 @@ async def run_inference(
         if not contents or len(contents) == 0:
             raise InvalidImageException("Uploaded image payload is empty (zero bytes).")
 
-        pil_image = Image.open(io.BytesIO(contents))
-        pil_image.verify()  # Verify integrity
-        # Reopen for pixel access after verify()
-        pil_image = Image.open(io.BytesIO(contents))
-        img_width, img_height = pil_image.size
+        try:
+            pil_image = Image.open(io.BytesIO(contents))
+            pil_image.verify()  # Verify integrity
+            pil_image = Image.open(io.BytesIO(contents))
+        except Exception:
+            raise InvalidImageException("The provided file could not be decoded as a valid image.")
+
+        # Decode standard 8-bit 3-channel OpenCV image (properly downscaling 16-bit integer X-rays)
+        nparr = np.frombuffer(contents, np.uint8)
+        cv_img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if cv_img is not None:
+            img_height, img_width = cv_img.shape[:2]
+            processed_image = cv_img
+        else:
+            img_width, img_height = pil_image.size
+            processed_image = pil_image
     except UnidentifiedImageError:
         raise InvalidImageException("The provided file could not be decoded as a valid image.")
     except Exception as e:
+        if isinstance(e, InvalidImageException):
+            raise
         raise InvalidImageException(f"Error decoding image stream: {str(e)}")
 
     # Get model and adapter
@@ -68,7 +83,7 @@ async def run_inference(
 
     # Execute model prediction under concurrency control via thread pool
     async with _inference_semaphore:
-        detections = await run_in_threadpool(adapter.predict, pil_image, analysisRunId)
+        detections = await run_in_threadpool(adapter.predict, processed_image, analysisRunId)
 
     elapsed_ms = int((time.perf_counter() - start_time) * 1000)
 

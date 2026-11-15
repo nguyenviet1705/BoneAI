@@ -1,6 +1,8 @@
 import logging
 import os
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
+import cv2
+import numpy as np
 from PIL import Image
 from app.inference.interfaces.base_adapter import BaseInferenceAdapter
 from app.schemas.inference import BoundingBox, DetectionResult
@@ -50,12 +52,17 @@ class TorchvisionFasterRCNNAdapter(BaseInferenceAdapter):
         self._model = None
         self._is_loaded = False
 
-    def predict(self, image: Image.Image, run_id: str) -> List[DetectionResult]:
+    def predict(self, image: Any, run_id: str) -> List[DetectionResult]:
         if not self.is_loaded():
             raise RuntimeError(f"Model '{self.model_key}' is not loaded.")
 
         import torch
         import torchvision.transforms.functional as F
+
+        if isinstance(image, np.ndarray):
+            if image.ndim == 3 and image.shape[2] == 3:
+                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            image = Image.fromarray(image)
 
         device = next(self._model.parameters()).device if hasattr(self._model, "parameters") else torch.device("cpu")
         tensor_img = F.to_tensor(image).unsqueeze(0).to(device)

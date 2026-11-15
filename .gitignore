@@ -488,3 +488,6 @@ $RECYCLE.BIN/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+
+# Model artifacts (> 100MB)
+*.onnx

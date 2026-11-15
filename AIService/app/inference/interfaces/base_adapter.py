@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List
-from PIL import Image
+from typing import Any, List
 from app.schemas.inference import DetectionResult
 
 class BaseInferenceAdapter(ABC):
@@ -17,9 +16,9 @@ class BaseInferenceAdapter(ABC):
         pass
 
     @abstractmethod
-    def predict(self, image: Image.Image, run_id: str) -> List[DetectionResult]:
+    def predict(self, image: Any, run_id: str) -> List[DetectionResult]:
         """
-        Run inference on the given PIL Image.
+        Run inference on the given input image (PIL Image or NumPy array).
         Returns a list of DetectionResult objects with pixel bounding boxes.
         """
         pass
