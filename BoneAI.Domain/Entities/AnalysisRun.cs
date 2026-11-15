@@ -15,6 +15,8 @@ public class AnalysisRun
     public int RetryCount { get; set; }
     public DateTime? LeaseUntil { get; set; }
     public string? ResultImagePath { get; set; }
+    public bool IsMockResult { get; set; }
+    public string? Warning { get; set; }
 
     public Analysis? Analysis { get; set; }
     public AIModel? AIModel { get; set; }

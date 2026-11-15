@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SixLabors.ImageSharp;
 
 namespace BoneAI.Infrastructure.BackgroundServices;
 
@@ -163,6 +164,32 @@ public class AnalysisBackgroundWorker : BackgroundService
             : (run.AIModel?.Name ?? "mock-bone-fracture-v1");
         var modelVersion = run.AIModel?.Version;
 
+        // Detect storage image dimensions to verify against inference response
+        int? storageWidth = null;
+        int? storageHeight = null;
+        try
+        {
+            if (imageStream.CanSeek)
+            {
+                imageStream.Position = 0;
+                var info = Image.Identify(imageStream);
+                if (info != null)
+                {
+                    storageWidth = info.Width;
+                    storageHeight = info.Height;
+                }
+                imageStream.Position = 0;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not determine image dimensions from storage stream for Run {RunId}", run.Id);
+            if (imageStream.CanSeek)
+            {
+                imageStream.Position = 0;
+            }
+        }
+
         var request = new InferenceClientRequest
         {
             AnalysisRunId = run.Id,
@@ -177,15 +204,40 @@ public class AnalysisBackgroundWorker : BackgroundService
         {
             var response = await aiClient.ExecuteInferenceAsync(request, cancellationToken);
 
+            // Point 4: Verify image dimensions consistency between Storage and AI Service response
+            if (storageWidth.HasValue && storageHeight.HasValue)
+            {
+                if (response.ImageWidth != storageWidth.Value || response.ImageHeight != storageHeight.Value)
+                {
+                    var mismatchMsg = $"Image dimension mismatch: storage image is {storageWidth.Value}x{storageHeight.Value}, but AI Service returned {response.ImageWidth}x{response.ImageHeight}.";
+                    _logger.LogError("AnalysisRun {RunId} dimension mismatch: {Msg}", run.Id, mismatchMsg);
+                    await FailRunAsync(run, mismatchMsg, runRepo, analysisRepo, cancellationToken);
+                    return;
+                }
+            }
+
             // Validate and build detection entities isolated to this run
             var detections = new List<Detection>();
             foreach (var d in response.Detections)
             {
+                // Reject completely invalid or degenerate bounding boxes
+                if (d.Width <= 0 || d.Height <= 0 || d.X >= response.ImageWidth || d.Y >= response.ImageHeight)
+                {
+                    _logger.LogWarning("Skipping invalid detection in Run {RunId}: X={X}, Y={Y}, W={W}, H={H}", run.Id, d.X, d.Y, d.Width, d.Height);
+                    continue;
+                }
+
                 var x = Math.Max(0m, Math.Min(d.X, (decimal)response.ImageWidth));
                 var y = Math.Max(0m, Math.Min(d.Y, (decimal)response.ImageHeight));
                 var width = Math.Max(0m, Math.Min(d.Width, (decimal)response.ImageWidth - x));
                 var height = Math.Max(0m, Math.Min(d.Height, (decimal)response.ImageHeight - y));
                 var confidence = Math.Clamp(d.Confidence, 0m, 1m);
+
+                if (width <= 0m || height <= 0m)
+                {
+                    _logger.LogWarning("Skipping detection clipped to zero dimensions in Run {RunId}", run.Id);
+                    continue;
+                }
 
                 detections.Add(new Detection
                 {
@@ -224,14 +276,16 @@ public class AnalysisBackgroundWorker : BackgroundService
             run.ProcessingTimeMs = response.ProcessingTimeMs;
             run.ErrorMessage = null;
             run.LeaseUntil = null;
+            run.IsMockResult = response.IsMockResult;
+            run.Warning = response.Warning;
 
             await runRepo.SaveChangesAsync(cancellationToken);
 
             // Recalculate aggregate status across all sibling runs
             await UpdateAggregateAnalysisStatusAsync(run, runRepo, analysisRepo, cancellationToken);
 
-            _logger.LogInformation("Successfully completed AnalysisRun {RunId} with {Count} detections in {Ms}ms",
-                run.Id, detections.Count, response.ProcessingTimeMs);
+            _logger.LogInformation("Successfully completed AnalysisRun {RunId} (IsMock={IsMock}) with {Count} detections in {Ms}ms",
+                run.Id, run.IsMockResult, detections.Count, response.ProcessingTimeMs);
         }
         catch (Exception ex) when (IsTransient(ex))
         {

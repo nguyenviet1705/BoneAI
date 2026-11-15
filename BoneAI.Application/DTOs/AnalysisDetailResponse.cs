@@ -25,6 +25,8 @@ public class AnalysisRunDetailDto
     public long? ProcessingTimeMs { get; set; }
     public int RetryCount { get; set; }
     public string? ErrorMessage { get; set; }
+    public bool IsMockResult { get; set; }
+    public string? Warning { get; set; }
     public IReadOnlyList<DetectionDto> Detections { get; set; } = Array.Empty<DetectionDto>();
 }
 

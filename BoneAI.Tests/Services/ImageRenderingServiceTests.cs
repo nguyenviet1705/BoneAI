@@ -163,4 +163,37 @@ public class ImageRenderingServiceTests
         var result = await _service.RenderAndSaveRunImageAsync(runId);
         Assert.Null(result);
     }
+
+    [Fact]
+    public async Task RenderAndSaveRunImage_DegenerateAndInvalidDetections_SkipsWithoutException()
+    {
+        var runId = Guid.NewGuid();
+        var origBytes = TestImageGenerator.CreateValidPng(100, 100);
+
+        var run = new AnalysisRun
+        {
+            Id = runId,
+            Analysis = new Analysis
+            {
+                XRayImage = new XRayImage { FilePath = "images/orig.png" }
+            },
+            Detections = new List<Detection>
+            {
+                new() { Id = Guid.NewGuid(), ClassName = "zero-w", Confidence = 0.9m, X = 10, Y = 10, Width = 0, Height = 20 },
+                new() { Id = Guid.NewGuid(), ClassName = "neg-h", Confidence = 0.9m, X = 10, Y = 10, Width = 20, Height = -5 },
+                new() { Id = Guid.NewGuid(), ClassName = "out-bounds", Confidence = 0.9m, X = 150, Y = 150, Width = 20, Height = 20 }
+            }
+        };
+
+        _runRepoMock.Setup(r => r.GetByIdAsync(runId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(run);
+        _storageServiceMock.Setup(s => s.GetAsync("images/orig.png", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => new MemoryStream(origBytes));
+        _storageServiceMock.Setup(s => s.SaveAsync(It.IsAny<Stream>(), It.IsAny<string>(), "image/png", It.IsAny<CancellationToken>()))
+            .ReturnsAsync("results/no_valid_boxes.png");
+
+        var resultPath = await _service.RenderAndSaveRunImageAsync(runId);
+
+        Assert.Equal("results/no_valid_boxes.png", resultPath);
+    }
 }

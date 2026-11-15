@@ -201,4 +201,159 @@ public class AnalysisBackgroundWorkerTests
         Assert.Equal(AnalysisStatus.Failed, analysis.Status);
         Assert.Contains("after 2 retry attempts", run.ErrorMessage);
     }
+
+    [Fact]
+    public async Task ProcessNextJobAsync_DimensionMismatch_FailsRunImmediately()
+    {
+        var runId = Guid.NewGuid();
+        var analysisId = Guid.NewGuid();
+
+        var imageBytes = BoneAI.Tests.Helpers.TestImageGenerator.CreateValidJpeg(640, 480);
+        var image = new XRayImage { Id = Guid.NewGuid(), FilePath = "2026/11/wrist.jpg", ContentType = "image/jpeg" };
+        var analysis = new Analysis { Id = analysisId, Status = AnalysisStatus.Pending, XRayImage = image };
+        var model = new AIModel { Id = Guid.NewGuid(), Name = "yolov8m", ModelKey = "yolov8m", Version = "1.0.0" };
+
+        var run = new AnalysisRun
+        {
+            Id = runId,
+            Analysis = analysis,
+            AIModel = model,
+            Status = AnalysisRunStatus.Pending
+        };
+
+        _mockRunRepo.Setup(r => r.ClaimNextPendingRunAsync(It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(run);
+
+        _mockStorage.Setup(s => s.GetAsync("2026/11/wrist.jpg", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new MemoryStream(imageBytes));
+
+        // Inference returns 800x600 instead of 640x480
+        var inferenceResponse = new InferenceClientResponse
+        {
+            AnalysisRunId = runId,
+            ModelKey = "yolov8m",
+            ImageWidth = 800,
+            ImageHeight = 600,
+            ProcessingTimeMs = 45,
+            Detections = new List<InferenceDetectionItem>()
+        };
+
+        _mockAiClient.Setup(c => c.ExecuteInferenceAsync(It.IsAny<InferenceClientRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(inferenceResponse);
+
+        var processed = await _worker.ProcessNextJobAsync(CancellationToken.None);
+
+        Assert.True(processed);
+        Assert.Equal(AnalysisRunStatus.Failed, run.Status);
+        Assert.Contains("Image dimension mismatch", run.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task ProcessNextJobAsync_MockResponse_PreservesIsMockResultAndWarning()
+    {
+        var runId = Guid.NewGuid();
+        var analysisId = Guid.NewGuid();
+
+        var imageBytes = BoneAI.Tests.Helpers.TestImageGenerator.CreateValidJpeg(400, 300);
+        var image = new XRayImage { Id = Guid.NewGuid(), FilePath = "2026/11/wrist.jpg", ContentType = "image/jpeg" };
+        var analysis = new Analysis { Id = analysisId, Status = AnalysisStatus.Pending, XRayImage = image };
+        var model = new AIModel { Id = Guid.NewGuid(), Name = "mock-model", ModelKey = "mock-bone-fracture-v1", Version = "1.0.0" };
+
+        var run = new AnalysisRun
+        {
+            Id = runId,
+            Analysis = analysis,
+            AIModel = model,
+            Status = AnalysisRunStatus.Pending
+        };
+
+        _mockRunRepo.Setup(r => r.ClaimNextPendingRunAsync(It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(run);
+
+        _mockStorage.Setup(s => s.GetAsync("2026/11/wrist.jpg", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new MemoryStream(imageBytes));
+
+        var inferenceResponse = new InferenceClientResponse
+        {
+            AnalysisRunId = runId,
+            ModelKey = "mock-bone-fracture-v1",
+            ImageWidth = 400,
+            ImageHeight = 300,
+            ProcessingTimeMs = 30,
+            IsMockResult = true,
+            Warning = "Synthetic mock detection",
+            Detections = new List<InferenceDetectionItem>
+            {
+                new() { ClassName = "fracture", Confidence = 0.90m, X = 50, Y = 50, Width = 60, Height = 60 }
+            }
+        };
+
+        _mockAiClient.Setup(c => c.ExecuteInferenceAsync(It.IsAny<InferenceClientRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(inferenceResponse);
+
+        var processed = await _worker.ProcessNextJobAsync(CancellationToken.None);
+
+        Assert.True(processed);
+        Assert.Equal(AnalysisRunStatus.Completed, run.Status);
+        Assert.True(run.IsMockResult);
+        Assert.Equal("Synthetic mock detection", run.Warning);
+    }
+
+    [Fact]
+    public async Task ProcessNextJobAsync_InvalidDetectionCoordinates_SkipsInvalidBoxes()
+    {
+        var runId = Guid.NewGuid();
+        var analysisId = Guid.NewGuid();
+
+        var imageBytes = BoneAI.Tests.Helpers.TestImageGenerator.CreateValidJpeg(400, 300);
+        var image = new XRayImage { Id = Guid.NewGuid(), FilePath = "2026/11/wrist.jpg", ContentType = "image/jpeg" };
+        var analysis = new Analysis { Id = analysisId, Status = AnalysisStatus.Pending, XRayImage = image };
+        var model = new AIModel { Id = Guid.NewGuid(), Name = "yolov8m", ModelKey = "yolov8m", Version = "1.0.0" };
+
+        var run = new AnalysisRun
+        {
+            Id = runId,
+            Analysis = analysis,
+            AIModel = model,
+            Status = AnalysisRunStatus.Pending
+        };
+
+        _mockRunRepo.Setup(r => r.ClaimNextPendingRunAsync(It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(run);
+
+        _mockStorage.Setup(s => s.GetAsync("2026/11/wrist.jpg", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new MemoryStream(imageBytes));
+
+        List<Detection>? savedDetections = null;
+        _mockRunRepo.Setup(r => r.SaveDetectionsAsync(runId, It.IsAny<IEnumerable<Detection>>(), It.IsAny<CancellationToken>()))
+            .Callback<Guid, IEnumerable<Detection>, CancellationToken>((_, list, _) => savedDetections = list.ToList())
+            .Returns(Task.CompletedTask);
+
+        var inferenceResponse = new InferenceClientResponse
+        {
+            AnalysisRunId = runId,
+            ModelKey = "yolov8m",
+            ImageWidth = 400,
+            ImageHeight = 300,
+            ProcessingTimeMs = 30,
+            Detections = new List<InferenceDetectionItem>
+            {
+                new() { ClassName = "invalid-zero-w", Confidence = 0.90m, X = 50, Y = 50, Width = 0, Height = 60 },
+                new() { ClassName = "invalid-neg-h", Confidence = 0.90m, X = 50, Y = 50, Width = 60, Height = -10 },
+                new() { ClassName = "invalid-out-of-bounds", Confidence = 0.90m, X = 500, Y = 400, Width = 60, Height = 60 },
+                new() { ClassName = "valid-fracture", Confidence = 0.85m, X = 100, Y = 100, Width = 50, Height = 50 }
+            }
+        };
+
+        _mockAiClient.Setup(c => c.ExecuteInferenceAsync(It.IsAny<InferenceClientRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(inferenceResponse);
+
+        var processed = await _worker.ProcessNextJobAsync(CancellationToken.None);
+
+        Assert.True(processed);
+        Assert.Equal(AnalysisRunStatus.Completed, run.Status);
+        Assert.NotNull(savedDetections);
+        Assert.Single(savedDetections);
+        Assert.Equal("valid-fracture", savedDetections[0].ClassName);
+    }
 }

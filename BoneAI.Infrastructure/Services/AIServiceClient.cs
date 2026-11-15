@@ -293,6 +293,18 @@ public class AIServiceClient : IAIServiceClient
         using var doc = JsonDocument.Parse(responseString);
         var root = doc.RootElement;
 
+        bool isMockResult = false;
+        if (root.TryGetProperty("isMockResult", out var mockProp))
+        {
+            isMockResult = mockProp.GetBoolean();
+        }
+
+        string? warning = null;
+        if (root.TryGetProperty("warning", out var warnProp) && warnProp.ValueKind == JsonValueKind.String)
+        {
+            warning = warnProp.GetString();
+        }
+
         var clientResponse = new InferenceClientResponse
         {
             AnalysisRunId = root.GetProperty("analysisRunId").GetGuid(),
@@ -300,7 +312,9 @@ public class AIServiceClient : IAIServiceClient
             ModelVersion = root.GetProperty("modelVersion").GetString() ?? string.Empty,
             ImageWidth = root.GetProperty("imageWidth").GetInt32(),
             ImageHeight = root.GetProperty("imageHeight").GetInt32(),
-            ProcessingTimeMs = root.GetProperty("processingTimeMs").GetInt64()
+            ProcessingTimeMs = root.GetProperty("processingTimeMs").GetInt64(),
+            IsMockResult = isMockResult,
+            Warning = warning
         };
 
         if (root.TryGetProperty("detections", out var detectionsArray) && detectionsArray.ValueKind == JsonValueKind.Array)

@@ -39,6 +39,10 @@ def test_inference_successful():
     assert box["x"] + box["width"] <= 200
     assert box["y"] + box["height"] <= 200
 
+    # Verify provenance
+    assert res["isMockResult"] is True
+    assert "mock" in res["warning"].lower()
+
 def test_inference_empty_image_fails():
     files = {"image": ("empty.jpg", b"", "image/jpeg")}
     data = {

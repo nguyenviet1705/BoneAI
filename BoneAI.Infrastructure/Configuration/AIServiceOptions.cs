@@ -10,5 +10,5 @@ public class AIServiceOptions
     public int MaxRetryAttempts { get; set; } = 3;
     public int InitialRetryDelayMs { get; set; } = 1000;
     public int MaxDegreeOfParallelism { get; set; } = 4;
-    public bool EnableMockFallback { get; set; } = true;
+    public bool EnableMockFallback { get; set; } = false;
 }

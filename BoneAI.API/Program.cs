@@ -101,6 +101,10 @@ if (app.Environment.IsDevelopment())
                 BEGIN
                     IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('AnalysisRuns') AND name = 'ResultImagePath')
                         ALTER TABLE AnalysisRuns ADD ResultImagePath NVARCHAR(500) NULL;
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('AnalysisRuns') AND name = 'IsMockResult')
+                        ALTER TABLE AnalysisRuns ADD IsMockResult BIT NOT NULL DEFAULT 0;
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('AnalysisRuns') AND name = 'Warning')
+                        ALTER TABLE AnalysisRuns ADD Warning NVARCHAR(1000) NULL;
                 END
                 IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'AIModels')
                 BEGIN

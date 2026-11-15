@@ -151,6 +151,8 @@ public class AnalysisService : IAnalysisService
             ProcessingTimeMs = r.ProcessingTimeMs,
             RetryCount = r.RetryCount,
             ErrorMessage = r.ErrorMessage,
+            IsMockResult = r.IsMockResult,
+            Warning = r.Warning,
             Detections = r.Detections.Select(d => new DetectionDto
             {
                 Id = d.Id,

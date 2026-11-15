@@ -15,9 +15,8 @@ preprocessing:
   inputSize: [640, 640]
   normalize: true
 postprocessing:
-  confidenceThreshold: 0.25
+  confidenceThreshold: 0.20
   iouThreshold: 0.45
-  maxDetections: 50
 inputRequirements:
   minWidth: 64
   minHeight: 64

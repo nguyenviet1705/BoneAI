@@ -79,6 +79,11 @@ export const ModelComparisonTable: React.FC<Props> = ({
                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                       )}
                       <span className="font-bold">{run.model.modelName}</span>
+                      {run.isMockResult && (
+                        <span className="text-[9px] px-1.5 py-0.2 rounded font-semibold bg-amber-100 text-amber-800 border border-amber-200">
+                          Mock
+                        </span>
+                      )}
                     </div>
                   </td>
                   <td className="py-2.5 px-2.5 text-center font-bold text-slate-800">

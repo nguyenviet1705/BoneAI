@@ -4,6 +4,7 @@ import time
 from typing import Optional
 from fastapi import APIRouter, File, Form, UploadFile
 from PIL import Image, UnidentifiedImageError
+from starlette.concurrency import run_in_threadpool
 
 from app.core.config import settings
 from app.core.errors import InvalidImageException, ModelNotReadyException
@@ -65,12 +66,14 @@ async def run_inference(
 
     adapter = registry.get_adapter(modelKey)
 
-    # Execute model prediction under concurrency control
+    # Execute model prediction under concurrency control via thread pool
     async with _inference_semaphore:
-        # If adapter.predict is CPU/GPU synchronous, run in executor if needed or direct
-        detections = adapter.predict(pil_image, analysisRunId)
+        detections = await run_in_threadpool(adapter.predict, pil_image, analysisRunId)
 
     elapsed_ms = int((time.perf_counter() - start_time) * 1000)
+
+    is_mock = bool(getattr(adapter, "is_mock", False))
+    warning = getattr(adapter, "mock_warning", None) if is_mock else None
 
     return InferenceResponse(
         analysisRunId=analysisRunId,
@@ -79,5 +82,7 @@ async def run_inference(
         imageWidth=img_width,
         imageHeight=img_height,
         processingTimeMs=elapsed_ms,
-        detections=detections
+        detections=detections,
+        isMockResult=is_mock,
+        warning=warning
     )

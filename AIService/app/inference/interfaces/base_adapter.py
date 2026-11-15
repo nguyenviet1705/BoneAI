@@ -8,6 +8,8 @@ class BaseInferenceAdapter(ABC):
     Common inference interface for all model architectures (YOLO, Faster R-CNN, etc.).
     Decouples model execution from the API layer.
     """
+    is_mock: bool = False
+    mock_warning: str = ""
 
     @abstractmethod
     def load(self) -> None:

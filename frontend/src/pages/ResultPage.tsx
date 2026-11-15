@@ -202,6 +202,13 @@ export const ResultPage: React.FC = () => {
                 }`}
               >
                 <span>{r.model.modelName}</span>
+                {r.isMockResult && (
+                  <span className={`text-[9px] px-1 py-0.2 rounded font-semibold ${
+                    isTabActive ? 'bg-amber-400 text-amber-950' : 'bg-amber-100 text-amber-800'
+                  }`}>
+                    Mock
+                  </span>
+                )}
                 <span
                   className={`text-[10px] px-1.5 py-0.2 rounded-full ${
                     isTabActive
@@ -254,6 +261,21 @@ export const ResultPage: React.FC = () => {
             <span>Trạng thái lượt chạy: <strong className="text-slate-600">{activeRun?.status || '-'}</strong></span>
           </div>
 
+          {/* Cảnh báo nguồn gốc kết quả nếu là Mock Result */}
+          {activeRun?.isMockResult && (
+            <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-300 text-amber-900 text-xs flex items-start gap-2.5 shadow-xs">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold text-amber-950">
+                  Cảnh báo: Kết quả mô phỏng (Mock Result)
+                </p>
+                <p className="mt-0.5 text-amber-800 leading-relaxed text-[11px]">
+                  {activeRun.warning || 'Kết quả này được sinh bởi bộ mô phỏng mock hoặc chế độ dự phòng fallback. Không phản ánh dự đoán của model YOLO thực tế.'}
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Error message nếu run thất bại */}
           {activeRun?.status === 'Failed' && activeRun.errorMessage && (
             <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
@@ -287,6 +309,7 @@ export const ResultPage: React.FC = () => {
             <ModelInfoWidget
               model={activeRun.model}
               processingTimeMs={activeRun.processingTimeMs}
+              isMockResult={activeRun.isMockResult}
             />
           )}
 

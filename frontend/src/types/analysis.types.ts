@@ -77,6 +77,8 @@ export interface AnalysisRunResultDto {
   errorMessage?: string;
   resultImageUrl?: string;
   detectionCount: number;
+  isMockResult?: boolean;
+  warning?: string | null;
   detections: DetectionItemDto[];
 }
 
@@ -106,6 +108,8 @@ export interface ModelComparisonItemDto {
   detections: DetectionItemDto[];
   resultImageUrl?: string;
   errorMessage?: string;
+  isMockResult?: boolean;
+  warning?: string | null;
 }
 
 export interface AnalysisComparisonDto {

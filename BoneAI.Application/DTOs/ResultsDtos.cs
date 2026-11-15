@@ -47,6 +47,8 @@ public class AnalysisRunResultDto
     public string? ErrorMessage { get; set; }
     public string? ResultImageUrl { get; set; }
     public int DetectionCount { get; set; }
+    public bool IsMockResult { get; set; }
+    public string? Warning { get; set; }
     public IReadOnlyList<DetectionItemDto> Detections { get; set; } = Array.Empty<DetectionItemDto>();
 }
 
@@ -78,6 +80,8 @@ public class ModelComparisonItemDto
     public IReadOnlyList<DetectionItemDto> Detections { get; set; } = Array.Empty<DetectionItemDto>();
     public string? ResultImageUrl { get; set; }
     public string? ErrorMessage { get; set; }
+    public bool IsMockResult { get; set; }
+    public string? Warning { get; set; }
 }
 
 public class AnalysisComparisonDto

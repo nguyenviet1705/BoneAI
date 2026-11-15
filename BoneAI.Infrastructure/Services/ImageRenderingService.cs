@@ -54,11 +54,20 @@ public class ImageRenderingService : IImageRenderingService
         try
         {
             using var image = await Image.LoadAsync<Rgba32>(rawStream, cancellationToken);
+            if (image.Width <= 0 || image.Height <= 0)
+            {
+                _logger.LogError("Cannot render result image: invalid dimensions {Width}x{Height} for Run {RunId}.", image.Width, image.Height, runId);
+                return null;
+            }
 
             // Draw each detection bounding box and label in Colab Electric Blue
+            int validDetectionsDrawn = 0;
             foreach (var detection in run.Detections)
             {
-                DrawDetection(image, detection);
+                if (DrawDetection(image, detection))
+                {
+                    validDetectionsDrawn++;
+                }
             }
 
             using var outputStream = new MemoryStream();
@@ -77,7 +86,9 @@ public class ImageRenderingService : IImageRenderingService
             run.ResultImagePath = savedPath;
             await _runRepo.SaveChangesAsync(cancellationToken);
 
-            _logger.LogInformation("Rendered and saved result image for Run {RunId} to {Path}", runId, savedPath);
+            _logger.LogInformation(
+                "Rendered and saved result image for Run {RunId} (Model: {ModelKey}): image size {Width}x{Height}, {ValidDrawn}/{TotalCount} detections drawn to {Path}",
+                runId, run.AIModel?.ModelKey ?? "unknown", image.Width, image.Height, validDetectionsDrawn, run.Detections.Count, savedPath);
             return savedPath;
         }
         catch (Exception ex)
@@ -87,28 +98,49 @@ public class ImageRenderingService : IImageRenderingService
         }
     }
 
-    private static void DrawDetection(Image<Rgba32> image, Detection detection)
+    private bool DrawDetection(Image<Rgba32> image, Detection detection)
     {
-        int x = (int)Math.Round(detection.X);
-        int y = (int)Math.Round(detection.Y);
-        int w = (int)Math.Round(detection.Width);
-        int h = (int)Math.Round(detection.Height);
+        // 1. Validate bounding box coordinates and positive dimensions
+        if (detection.Width <= 0 || detection.Height <= 0)
+        {
+            _logger.LogWarning("Skipping detection {DetectionId} with non-positive dimensions: Width={Width}, Height={Height}",
+                detection.Id, detection.Width, detection.Height);
+            return false;
+        }
 
         int imgW = image.Width;
         int imgH = image.Height;
 
-        // Clamp bounding box to image boundaries
-        x = Math.Clamp(x, 0, imgW - 1);
-        y = Math.Clamp(y, 0, imgH - 1);
-        w = Math.Clamp(w, 1, imgW - x);
-        h = Math.Clamp(h, 1, imgH - y);
+        // Check if box is completely outside image boundary
+        if (detection.X >= imgW || detection.Y >= imgH ||
+            (detection.X + detection.Width) <= 0 || (detection.Y + detection.Height) <= 0)
+        {
+            _logger.LogWarning("Skipping detection {DetectionId} located entirely outside image bounds: X={X}, Y={Y}, W={W}, H={H}",
+                detection.Id, detection.X, detection.Y, detection.Width, detection.Height);
+            return false;
+        }
+
+        // 2. Perform accurate clipping to image boundaries
+        int x1 = Math.Max(0, (int)Math.Round(detection.X));
+        int y1 = Math.Max(0, (int)Math.Round(detection.Y));
+        int x2 = Math.Min(imgW, (int)Math.Round(detection.X + detection.Width));
+        int y2 = Math.Min(imgH, (int)Math.Round(detection.Y + detection.Height));
+
+        int w = x2 - x1;
+        int h = y2 - y1;
+
+        if (w <= 0 || h <= 0)
+        {
+            _logger.LogWarning("Skipping detection {DetectionId} that clips to empty area", detection.Id);
+            return false;
+        }
 
         int thickness = Math.Clamp(Math.Max(imgW, imgH) / 200, 3, 7);
 
-        // 1. Draw Bounding Box rectangle in Electric Blue
-        DrawRectangle(image, x, y, w, h, thickness, BoxColor);
+        // 3. Draw Bounding Box rectangle in Electric Blue
+        DrawRectangle(image, x1, y1, w, h, thickness, BoxColor);
 
-        // 2. Prepare Label text matching Google Colab style: "fracture 0.78"
+        // 4. Prepare Label text matching Google Colab style: "fracture 0.78"
         var label = $"{detection.ClassName} {detection.Confidence:0.00}";
         int fontScale = Math.Clamp(Math.Max(imgW, imgH) / 550, 1, 3);
         int charW = 6 * fontScale;
@@ -117,18 +149,20 @@ public class ImageRenderingService : IImageRenderingService
         int bannerW = (label.Length * charW) + (padding * 2);
         int bannerH = charH + (padding * 2);
 
-        int bannerX = x;
-        int bannerY = y >= bannerH ? y - bannerH : y;
+        int bannerX = x1;
+        int bannerY = y1 >= bannerH ? y1 - bannerH : y1;
         bannerX = Math.Clamp(bannerX, 0, Math.Max(0, imgW - bannerW));
         bannerY = Math.Clamp(bannerY, 0, Math.Max(0, imgH - bannerH));
 
-        // 3. Draw Solid Blue Banner background
+        // 5. Draw Solid Blue Banner background
         FillRectangle(image, bannerX, bannerY, Math.Min(bannerW, imgW - bannerX), Math.Min(bannerH, imgH - bannerY), BannerBgColor);
 
-        // 4. Draw Label text pixels in crisp white
+        // 6. Draw Label text pixels in crisp white
         int textX = bannerX + padding;
         int textY = bannerY + padding;
         DrawString(image, textX, textY, label, TextColor, fontScale);
+
+        return true;
     }
 
     private static void DrawRectangle(Image<Rgba32> image, int x, int y, int w, int h, int thickness, Rgba32 color)

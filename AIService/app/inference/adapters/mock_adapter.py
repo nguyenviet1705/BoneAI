@@ -9,6 +9,8 @@ class MockInferenceAdapter(BaseInferenceAdapter):
     Clearly marks and returns deterministic detection bounding boxes relative to original image size.
     Supports customization of class name, confidence, and box location per model instance.
     """
+    is_mock: bool = True
+    mock_warning: str = "Inference evaluated via mock adapter (synthetic detections)."
 
     def __init__(
         self,

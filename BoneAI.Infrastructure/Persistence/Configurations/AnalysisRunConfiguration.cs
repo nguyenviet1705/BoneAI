@@ -41,6 +41,13 @@ public class AnalysisRunConfiguration : IEntityTypeConfiguration<AnalysisRun>
         builder.Property(r => r.ErrorMessage)
             .HasMaxLength(2000);
 
+        builder.Property(r => r.IsMockResult)
+            .IsRequired()
+            .HasDefaultValue(false);
+
+        builder.Property(r => r.Warning)
+            .HasMaxLength(1000);
+
         builder.HasIndex(r => r.AnalysisId);
         builder.HasIndex(r => r.AIModelId);
         builder.HasIndex(r => new { r.AnalysisId, r.AIModelId });

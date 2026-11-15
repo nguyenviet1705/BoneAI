@@ -119,7 +119,9 @@ public class ResultsService : IResultsService
                 AverageConfidence = averageConfidence,
                 Detections = detections,
                 ResultImageUrl = !string.IsNullOrEmpty(run.ResultImagePath) ? $"/api/results/runs/{run.Id}/image" : null,
-                ErrorMessage = run.ErrorMessage
+                ErrorMessage = run.ErrorMessage,
+                IsMockResult = run.IsMockResult,
+                Warning = run.Warning
             };
         }).ToList();
 
@@ -197,6 +199,8 @@ public class ResultsService : IResultsService
             ErrorMessage = run.ErrorMessage,
             ResultImageUrl = !string.IsNullOrEmpty(run.ResultImagePath) ? $"/api/results/runs/{run.Id}/image" : null,
             DetectionCount = detections.Count,
+            IsMockResult = run.IsMockResult,
+            Warning = run.Warning,
             Detections = detections
         };
     }

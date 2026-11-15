@@ -5,18 +5,30 @@ import type { ModelInfoDto } from '../../types/analysis.types';
 interface Props {
   model: ModelInfoDto;
   processingTimeMs?: number | null;
+  isMockResult?: boolean;
 }
 
-export const ModelInfoWidget: React.FC<Props> = ({ model, processingTimeMs }) => {
+export const ModelInfoWidget: React.FC<Props> = ({ model, processingTimeMs, isMockResult }) => {
   const speedDisplay = processingTimeMs ? `${processingTimeMs.toFixed(1)} ms/ảnh` : '13.6 ms/ảnh';
 
   return (
     <div className="space-y-4">
       {/* Model Tech Info Card */}
       <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs space-y-3">
-        <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-          <span>Thông tin model</span>
-        </h3>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+            <span>Thông tin model</span>
+          </h3>
+          {isMockResult ? (
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+              MÔ PHỎNG (MOCK)
+            </span>
+          ) : (
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+              MÔ HÌNH THỰC
+            </span>
+          )}
+        </div>
 
         <div className="space-y-2">
           <div className="flex items-center gap-2 text-xs font-bold text-slate-800">

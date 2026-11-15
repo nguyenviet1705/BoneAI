@@ -8,9 +8,9 @@ class PreprocessingConfig(BaseModel):
     std: Optional[List[float]] = None
 
 class PostprocessingConfig(BaseModel):
-    confidenceThreshold: float = 0.25
+    confidenceThreshold: float = 0.20
     iouThreshold: float = 0.45
-    maxDetections: int = 100
+    maxDetections: Optional[int] = None
 
 class InputRequirements(BaseModel):
     minWidth: int = 32
@@ -72,9 +72,10 @@ class ModelManifest(BaseModel):
         # Normalize inference thresholds
         inference_block = data.get("inference") or {}
         postproc = data.get("postprocessing") or {}
-        conf = postproc.get("confidenceThreshold") or inference_block.get("confidence_threshold") or 0.25
+        conf = postproc.get("confidenceThreshold") or inference_block.get("confidence_threshold") or 0.20
         iou = postproc.get("iouThreshold") or inference_block.get("iou_threshold") or 0.45
         img_size = inference_block.get("image_size") or 640
+        max_dets = postproc.get("maxDetections") or inference_block.get("max_detections")
 
         normalized = dict(data)
         normalized["modelKey"] = str(key) if key else "unnamed_model"
@@ -89,7 +90,7 @@ class ModelManifest(BaseModel):
             normalized["postprocessing"] = {
                 "confidenceThreshold": float(conf),
                 "iouThreshold": float(iou),
-                "maxDetections": 100
+                "maxDetections": max_dets
             }
         if "preprocessing" not in normalized:
             normalized["preprocessing"] = {

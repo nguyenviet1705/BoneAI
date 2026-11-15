@@ -210,13 +210,27 @@ class ModelRegistry:
             conf_thresh = (
                 manifest.postprocessing.confidenceThreshold
                 if manifest.postprocessing and hasattr(manifest.postprocessing, "confidenceThreshold")
-                else 0.25
+                else 0.20
             )
+            max_dets = (
+                manifest.postprocessing.maxDetections
+                if manifest.postprocessing and hasattr(manifest.postprocessing, "maxDetections")
+                else None
+            )
+            img_size = 640
+            if (manifest.preprocessing and 
+                hasattr(manifest.preprocessing, "inputSize") and 
+                manifest.preprocessing.inputSize and 
+                len(manifest.preprocessing.inputSize) > 0):
+                img_size = int(manifest.preprocessing.inputSize[0])
+
             return YoloInferenceAdapter(
                 model_key=manifest.modelKey,
                 artifact_path=artifact_path,
                 confidence_threshold=conf_thresh,
-                iou_threshold=iou_thresh
+                iou_threshold=iou_thresh,
+                image_size=img_size,
+                max_detections=max_dets
             )
         elif adapter_id in ("torchvision", "faster_rcnn") and artifact_path:
             return TorchvisionFasterRCNNAdapter(

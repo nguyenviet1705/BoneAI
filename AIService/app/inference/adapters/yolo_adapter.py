@@ -14,21 +14,28 @@ class YoloInferenceAdapter(BaseInferenceAdapter):
       - YOLO(best.pt)
       - conf=CONF_THRESHOLD (default 0.25)
       - iou=IOU_THRESHOLD (default 0.45)
+      - imgsz=IMAGE_SIZE (default 640)
+      - max_det=MAX_DETECTIONS (default 50)
       - box extraction: class_id, confidence, xyxy[0]
       - class_name from model.names
     """
+    is_mock: bool = False
 
     def __init__(
         self,
         model_key: str,
         artifact_path: str,
-        confidence_threshold: float = 0.25,
-        iou_threshold: float = 0.45
+        confidence_threshold: float = 0.20,
+        iou_threshold: float = 0.45,
+        image_size: int = 640,
+        max_detections: Optional[int] = None
     ):
         self.model_key = model_key
         self.artifact_path = artifact_path
         self.confidence_threshold = confidence_threshold
         self.iou_threshold = iou_threshold
+        self.image_size = image_size
+        self.max_detections = max_detections
         self._model = None
         self._is_loaded = False
 
@@ -37,6 +44,11 @@ class YoloInferenceAdapter(BaseInferenceAdapter):
             raise FileNotFoundError(f"YOLO model weights file not found at: {self.artifact_path}")
 
         try:
+            # NumPy 2.4+ compatibility fix for Ultralytics
+            import numpy as np
+            if not hasattr(np, "trapz") and hasattr(np, "trapezoid"):
+                np.trapz = np.trapezoid
+
             from ultralytics import YOLO
             logger.info(f"Loading YOLO model from: {self.artifact_path} ({os.path.getsize(self.artifact_path) / (1024**2):.2f} MB)")
             self._model = YOLO(self.artifact_path)
@@ -57,14 +69,20 @@ class YoloInferenceAdapter(BaseInferenceAdapter):
         if not self.is_loaded():
             raise RuntimeError(f"Model '{self.model_key}' is not loaded.")
 
-        # Execute YOLO predict exactly as in test cell
-        results = self._model.predict(
-            source=image,
-            conf=self.confidence_threshold,
-            iou=self.iou_threshold,
-            save=False,
-            verbose=False
-        )
+        # Execute YOLO predict with manifest-driven parameters
+        predict_kwargs = {
+            "source": image,
+            "conf": self.confidence_threshold,
+            "iou": self.iou_threshold,
+            "save": False,
+            "verbose": False
+        }
+        if self.image_size:
+            predict_kwargs["imgsz"] = self.image_size
+        if self.max_detections is not None:
+            predict_kwargs["max_det"] = self.max_detections
+
+        results = self._model.predict(**predict_kwargs)
         detections: List[DetectionResult] = []
 
         for r in results:
