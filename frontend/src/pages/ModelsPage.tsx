@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Layers, 
-  Plus, 
   RefreshCw, 
   MoreVertical,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Info,
+  AlertTriangle
 } from 'lucide-react';
 import { apiClient } from '../api/apiClient';
 
@@ -18,6 +19,7 @@ interface ModelItem {
   isAvailable: boolean;
   framework: string;
   description: string;
+  modelKey: string;
 }
 
 export const ModelsPage: React.FC = () => {
@@ -25,6 +27,7 @@ export const ModelsPage: React.FC = () => {
   const [models, setModels] = useState<ModelItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [selectedModel, setSelectedModel] = useState<ModelItem | null>(null);
 
   useEffect(() => {
@@ -33,15 +36,17 @@ export const ModelsPage: React.FC = () => {
 
   const fetchModels = async () => {
     setIsLoading(true);
+    setErrorMessage(null);
     try {
       const res = await apiClient.get<any[]>('/models');
       if (res.data && res.data.length > 0) {
         const mapped: ModelItem[] = res.data.map((m) => ({
           id: m.id,
+          modelKey: m.modelKey,
           name: m.name,
-          version: m.version || 'v1.0',
-          checkpoint: m.name.toLowerCase().includes('v8') ? 'best.pt / last.pt' : '-',
-          testMap50: m.name.toLowerCase().includes('v8') ? 'mAP@50: 94.76%' : '-',
+          version: m.version || '1.0.0',
+          checkpoint: m.modelKey.includes('v8') ? 'best.pt / last.pt' : `${m.modelKey}.pt`,
+          testMap50: m.modelKey.includes('v8') ? 'mAP@50: 94.76%' : m.isAvailable ? 'Sẵn sàng suy luận' : 'Chờ artifact',
           isActive: m.isActive,
           isAvailable: m.isAvailable,
           framework: m.framework,
@@ -49,71 +54,26 @@ export const ModelsPage: React.FC = () => {
         }));
         setModels(mapped);
       } else {
-        setFallbackModels();
+        setModels([]);
       }
-    } catch {
-      setFallbackModels();
+    } catch (err: any) {
+      console.error('Lỗi khi tải danh sách mô hình:', err);
+      setErrorMessage(err.message || 'Không thể kết nối đến máy chủ để lấy danh sách mô hình AI.');
+      setModels([]);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const setFallbackModels = () => {
-    setModels([
-      {
-        id: '1',
-        name: 'YOLOv8m',
-        version: 'v1.0 (baseline_640)',
-        checkpoint: 'best.pt / last.pt',
-        testMap50: 'mAP@50: 94.76%',
-        isActive: true,
-        isAvailable: true,
-        framework: 'PyTorch (Ultralytics)',
-        description: 'Mô hình baseline nhận diện gãy xương cổ tay',
-      },
-      {
-        id: '2',
-        name: 'YOLOv11',
-        version: 'v2.0',
-        checkpoint: '-',
-        testMap50: '-',
-        isActive: false,
-        isAvailable: false,
-        framework: 'PyTorch',
-        description: 'Thử nghiệm kiến trúc YOLOv11',
-      },
-      {
-        id: '3',
-        name: 'YOLOv26',
-        version: 'v3.0',
-        checkpoint: '-',
-        testMap50: '-',
-        isActive: false,
-        isAvailable: false,
-        framework: 'PyTorch',
-        description: 'Thử nghiệm transformer backbone',
-      },
-      {
-        id: '4',
-        name: 'Faster R-CNN',
-        version: 'v1.0',
-        checkpoint: '-',
-        testMap50: '-',
-        isActive: false,
-        isAvailable: false,
-        framework: 'TorchVision',
-        description: 'Mô hình Two-stage đối sánh baseline',
-      },
-    ]);
-  };
-
   const handleSyncWithAIService = async () => {
     setIsSyncing(true);
+    setErrorMessage(null);
     try {
       await apiClient.post('/models/sync');
       await fetchModels();
-    } catch (e) {
-      console.warn('Sync models API not ready, refreshed locally');
+    } catch (err: any) {
+      console.error('Lỗi đồng bộ AI Service:', err);
+      alert(`Đồng bộ thất bại: ${err.message || 'Không thể kết nối với Python AI Service'}`);
       await fetchModels();
     } finally {
       setIsSyncing(false);
@@ -126,11 +86,8 @@ export const ModelsPage: React.FC = () => {
       setModels((prev) =>
         prev.map((m) => (m.id === model.id ? { ...m, isActive: !m.isActive } : m))
       );
-    } catch {
-      // Toggle locally
-      setModels((prev) =>
-        prev.map((m) => (m.id === model.id ? { ...m, isActive: !m.isActive } : m))
-      );
+    } catch (err: any) {
+      alert(`Không thể thay đổi trạng thái mô hình: ${err.message}`);
     }
   };
 
@@ -144,7 +101,7 @@ export const ModelsPage: React.FC = () => {
             <span>Quản lý mô hình</span>
           </h1>
           <p className="text-xs text-slate-500 mt-1 font-medium">
-            Quản lý các mô hình AI và checkpoint
+            Quản lý các mô hình AI và checkpoint đăng ký trong hệ thống
           </p>
         </div>
 
@@ -161,14 +118,31 @@ export const ModelsPage: React.FC = () => {
 
           <button
             type="button"
-            onClick={() => alert('Chức năng thêm mô hình mới sẽ mở trong bản phát hành tới.')}
-            className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-blue-600/20 transition-all"
+            onClick={fetchModels}
+            className="p-2 bg-white border border-slate-200 text-slate-600 hover:text-blue-600 rounded-xl shadow-xs transition-colors"
+            title="Làm mới danh sách"
           >
-            <Plus className="w-4 h-4" />
-            <span>Thêm mô hình</span>
+            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-blue-600' : ''}`} />
           </button>
         </div>
       </div>
+
+      {/* Error Banner */}
+      {errorMessage && (
+        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{errorMessage}</span>
+          </div>
+          <button
+            type="button"
+            onClick={fetchModels}
+            className="px-3 py-1 bg-white border border-rose-200 text-rose-700 font-bold rounded-lg hover:bg-rose-100"
+          >
+            Thử lại
+          </button>
+        </div>
+      )}
 
       {/* Main Container */}
       <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-5">
@@ -183,7 +157,7 @@ export const ModelsPage: React.FC = () => {
                 : 'text-slate-400 hover:text-slate-600'
             }`}
           >
-            <span>Danh sách model</span>
+            <span>Danh sách model ({models.length})</span>
             {activeTab === 'models' && (
               <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-full" />
             )}
@@ -215,16 +189,26 @@ export const ModelsPage: React.FC = () => {
                   <th className="py-3 px-3">Phiên bản</th>
                   <th className="py-3 px-3">Trạng thái</th>
                   <th className="py-3 px-3">Checkpoint</th>
-                  <th className="py-3 px-3">Hiệu năng (Test)</th>
+                  <th className="py-3 px-3">Hiệu năng / Sẵn sàng</th>
                   <th className="py-3 px-3 text-right">Thao tác</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
                 {isLoading ? (
                   <tr>
-                    <td colSpan={6} className="py-8 text-center text-slate-400">
+                    <td colSpan={6} className="py-12 text-center text-slate-400">
                       <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-1 text-blue-600" />
-                      Đang tải danh sách mô hình...
+                      Đang tải danh sách mô hình từ cơ sở dữ liệu...
+                    </td>
+                  </tr>
+                ) : models.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-12 text-center text-slate-400">
+                      <Info className="w-6 h-6 mx-auto mb-2 text-slate-300" />
+                      <p className="font-semibold text-slate-600">Không có mô hình nào trong cơ sở dữ liệu.</p>
+                      <p className="text-[11px] text-slate-400 mt-1">
+                        Bấm nút "Đồng bộ AI Service" phía trên để nạp các mô hình từ service inference.
+                      </p>
                     </td>
                   </tr>
                 ) : (
@@ -232,25 +216,33 @@ export const ModelsPage: React.FC = () => {
                     <tr key={model.id} className="hover:bg-slate-50/70 transition-colors">
                       {/* Name */}
                       <td className="py-3.5 px-3">
-                        <span className="font-bold text-slate-800">{model.name}</span>
+                        <div>
+                          <span className="font-bold text-slate-800">{model.name}</span>
+                          <span className="block text-[10px] font-mono text-slate-400">{model.modelKey}</span>
+                        </div>
                       </td>
 
                       {/* Version */}
-                      <td className="py-3.5 px-3 text-slate-600">
-                        {model.version}
+                      <td className="py-3.5 px-3 text-slate-600 font-mono text-[11px]">
+                        v{model.version}
                       </td>
 
                       {/* Status */}
                       <td className="py-3.5 px-3">
-                        {model.isActive ? (
+                        {model.isActive && model.isAvailable ? (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
                             Đã sẵn sàng
                           </span>
+                        ) : model.isActive && !model.isAvailable ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                            Chờ weights
+                          </span>
                         ) : (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-500">
                             <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
-                            Chưa xác minh
+                            Đã vô hiệu hóa
                           </span>
                         )}
                       </td>
@@ -262,13 +254,9 @@ export const ModelsPage: React.FC = () => {
 
                       {/* Hiệu năng */}
                       <td className="py-3.5 px-3">
-                        {model.testMap50 !== '-' ? (
-                          <span className="font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">
-                            {model.testMap50}
-                          </span>
-                        ) : (
-                          <span className="text-slate-400">-</span>
-                        )}
+                        <span className="font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md text-[11px]">
+                          {model.testMap50}
+                        </span>
                       </td>
 
                       {/* Actions */}
@@ -351,7 +339,7 @@ export const ModelsPage: React.FC = () => {
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-slate-800">{selectedModel.name}</h3>
-                  <p className="text-xs text-slate-400">{selectedModel.version}</p>
+                  <p className="text-xs text-slate-400 font-mono">{selectedModel.modelKey} • v{selectedModel.version}</p>
                 </div>
               </div>
               <button
@@ -375,15 +363,15 @@ export const ModelsPage: React.FC = () => {
                   <p className="font-bold text-slate-800">{selectedModel.framework || 'PyTorch'}</p>
                 </div>
                 <div className="bg-slate-50 p-3 rounded-xl">
-                  <span className="text-slate-400 block mb-1">Checkpoint</span>
+                  <span className="text-slate-400 block mb-1">Checkpoint / Artifact</span>
                   <p className="font-mono text-slate-800">{selectedModel.checkpoint}</p>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-slate-50 p-3 rounded-xl">
-                  <span className="text-slate-400 block mb-1">Hiệu năng mAP@50</span>
-                  <p className="font-bold text-blue-600">{selectedModel.testMap50}</p>
+                  <span className="text-slate-400 block mb-1">Định danh Model ID</span>
+                  <p className="font-mono text-[11px] text-slate-700 truncate">{selectedModel.id}</p>
                 </div>
                 <div className="bg-slate-50 p-3 rounded-xl">
                   <span className="text-slate-400 block mb-1">Trạng thái kích hoạt</span>
