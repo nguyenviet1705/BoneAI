@@ -35,6 +35,9 @@ public class AnalysisRunConfiguration : IEntityTypeConfiguration<AnalysisRun>
 
         builder.Property(r => r.LeaseUntil);
 
+        builder.Property(r => r.ResultImagePath)
+            .HasMaxLength(500);
+
         builder.Property(r => r.ErrorMessage)
             .HasMaxLength(2000);
 

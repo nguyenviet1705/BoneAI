@@ -17,6 +17,7 @@ public class AnalysisRepository : IAnalysisRepository
     public async Task<Analysis?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         return await _context.Analyses
+            .Include(a => a.XRayImage)
             .Include(a => a.AnalysisRuns)
                 .ThenInclude(r => r.AIModel)
             .Include(a => a.AnalysisRuns)

@@ -171,6 +171,10 @@ namespace BoneAI.Infrastructure.Persistence.Migrations
                     b.Property<long?>("ProcessingTimeMs")
                         .HasColumnType("bigint");
 
+                    b.Property<string>("ResultImagePath")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
                     b.Property<int>("RetryCount")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int")

@@ -14,6 +14,7 @@ public class AnalysisRun
     public string? ErrorMessage { get; set; }
     public int RetryCount { get; set; }
     public DateTime? LeaseUntil { get; set; }
+    public string? ResultImagePath { get; set; }
 
     public Analysis? Analysis { get; set; }
     public AIModel? AIModel { get; set; }
