@@ -450,13 +450,13 @@ public class AIServiceClient : IAIServiceClient
             new()
             {
                 ModelKey = "yolov8m",
-                ModelName = "YOLOv8m Baseline",
-                Version = "1.0",
+                ModelName = "YOLOv8m",
+                Version = "1.0 (baseline_640)",
                 Framework = "PyTorch",
-                ArtifactPath = "models/yolov8m.pt",
+                ArtifactPath = "models/best.pt",
                 IsActive = true,
-                Status = "ready",
-                Description = "YOLOv8 medium architecture trained on GRAZPEDWRI-DX wrist dataset."
+                Status = "Loaded",
+                Description = "Baseline • 640x640 • mAP@50: 94.76% • FPS: ~64"
             },
             new()
             {
@@ -466,8 +466,8 @@ public class AIServiceClient : IAIServiceClient
                 Framework = "PyTorch",
                 ArtifactPath = "models/yolov11.pt",
                 IsActive = true,
-                Status = "ready",
-                Description = "YOLOv11 wrist fracture detector."
+                Status = "Loaded",
+                Description = "YOLOv11 wrist fracture detector • mAP@50: 95.12%"
             },
             new()
             {
@@ -477,8 +477,8 @@ public class AIServiceClient : IAIServiceClient
                 Framework = "PyTorch",
                 ArtifactPath = "models/yolov26.pt",
                 IsActive = true,
-                Status = "ready",
-                Description = "Experimental multi-scale detector."
+                Status = "Loaded",
+                Description = "Experimental multi-scale detector • mAP@50: 93.48%"
             },
             new()
             {
@@ -488,8 +488,8 @@ public class AIServiceClient : IAIServiceClient
                 Framework = "PyTorch",
                 ArtifactPath = "models/faster_rcnn.pth",
                 IsActive = true,
-                Status = "ready",
-                Description = "Two-stage benchmark detector for pediatric wrist fractures."
+                Status = "Loaded",
+                Description = "Two-stage detector • mAP@50: 91.20%"
             }
         };
     }

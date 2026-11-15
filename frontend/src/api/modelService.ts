@@ -11,6 +11,14 @@ export const modelService = {
   },
 
   /**
+   * Đồng bộ hóa danh mục mô hình với AI Service
+   */
+  async syncModels(): Promise<any> {
+    const response = await apiClient.post('/models/sync');
+    return response.data;
+  },
+
+  /**
    * Kiểm tra trạng thái AI Service
    */
   async checkAIServiceHealth(): Promise<{ liveness: string; readiness: string; checkedAt: string }> {

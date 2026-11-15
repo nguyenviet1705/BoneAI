@@ -101,6 +101,59 @@ if (app.Environment.IsDevelopment())
                 BEGIN
                     IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('AnalysisRuns') AND name = 'ResultImagePath')
                         ALTER TABLE AnalysisRuns ADD ResultImagePath NVARCHAR(500) NULL;
+                END
+                IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'AIModels')
+                BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM AIModels WHERE ModelKey = 'yolov8m')
+                    BEGIN
+                        INSERT INTO AIModels (Id, ModelKey, Name, Version, Framework, Description, IsActive, IsAvailable, CreatedAt)
+                        VALUES (NEWID(), 'yolov8m', 'YOLOv8m', '1.0 (baseline_640)', 'PyTorch', 'Baseline • 640x640 • mAP@50: 94.76% • FPS: ~64', 1, 1, SYSUTCDATETIME());
+                    END
+                    ELSE
+                    BEGIN
+                        UPDATE AIModels 
+                        SET Name = 'YOLOv8m', Version = '1.0 (baseline_640)', IsActive = 1, IsAvailable = 1, Description = 'Baseline • 640x640 • mAP@50: 94.76% • FPS: ~64'
+                        WHERE ModelKey = 'yolov8m';
+                    END
+
+                    IF NOT EXISTS (SELECT 1 FROM AIModels WHERE ModelKey = 'yolov11')
+                    BEGIN
+                        INSERT INTO AIModels (Id, ModelKey, Name, Version, Framework, Description, IsActive, IsAvailable, CreatedAt)
+                        VALUES (NEWID(), 'yolov11', 'YOLOv11', '2.0', 'PyTorch', 'YOLOv11 wrist fracture detector • mAP@50: 95.12%', 1, 1, SYSUTCDATETIME());
+                    END
+                    ELSE
+                    BEGIN
+                        UPDATE AIModels 
+                        SET Name = 'YOLOv11', Version = '2.0', IsActive = 1, IsAvailable = 1, Description = 'YOLOv11 wrist fracture detector • mAP@50: 95.12%'
+                        WHERE ModelKey = 'yolov11';
+                    END
+
+                    IF NOT EXISTS (SELECT 1 FROM AIModels WHERE ModelKey = 'yolov26')
+                    BEGIN
+                        INSERT INTO AIModels (Id, ModelKey, Name, Version, Framework, Description, IsActive, IsAvailable, CreatedAt)
+                        VALUES (NEWID(), 'yolov26', 'YOLOv26', '3.0', 'PyTorch', 'Experimental multi-scale detector • mAP@50: 93.48%', 1, 1, SYSUTCDATETIME());
+                    END
+                    ELSE
+                    BEGIN
+                        UPDATE AIModels 
+                        SET Name = 'YOLOv26', Version = '3.0', IsActive = 1, IsAvailable = 1, Description = 'Experimental multi-scale detector • mAP@50: 93.48%'
+                        WHERE ModelKey = 'yolov26';
+                    END
+
+                    IF NOT EXISTS (SELECT 1 FROM AIModels WHERE ModelKey = 'faster-rcnn')
+                    BEGIN
+                        INSERT INTO AIModels (Id, ModelKey, Name, Version, Framework, Description, IsActive, IsAvailable, CreatedAt)
+                        VALUES (NEWID(), 'faster-rcnn', 'Faster R-CNN', '1.0', 'PyTorch', 'Two-stage detector • mAP@50: 91.20%', 1, 1, SYSUTCDATETIME());
+                    END
+                    ELSE
+                    BEGIN
+                        UPDATE AIModels 
+                        SET Name = 'Faster R-CNN', Version = '1.0', IsActive = 1, IsAvailable = 1, Description = 'Two-stage detector • mAP@50: 91.20%'
+                        WHERE ModelKey = 'faster-rcnn';
+                    END
+
+                    -- Deactivate legacy test mock keys so they do not clutter UI
+                    UPDATE AIModels SET IsActive = 0 WHERE ModelKey IN ('mock-wrist-yolo-v8', 'mock-carpal-det-v2', 'unloaded-faster-rcnn', 'mock-bone-fracture-v1');
                 END";
             dbContext.Database.ExecuteSqlRaw(schemaFixSql);
         }

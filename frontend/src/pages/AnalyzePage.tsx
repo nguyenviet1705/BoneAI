@@ -43,14 +43,26 @@ export const AnalyzePage: React.FC = () => {
     loadModels();
   }, []);
 
-  const loadModels = () => {
+  const loadModels = (forceSync: boolean = false) => {
     setIsLoadingModels(true);
-    modelService.getModels()
+    const fetchAction = forceSync
+      ? modelService.syncModels().then(() => modelService.getModels())
+      : modelService.getModels();
+
+    fetchAction
       .then((data) => {
         if (data && data.length > 0) {
-          setModels(data);
+          // Sắp xếp đưa YOLOv8m lên đầu danh sách theo thiết kế
+          const sorted = [...data].sort((a, b) => {
+            const isA_Yolo = a.modelKey === 'yolov8m' || a.name.toLowerCase().includes('yolov8');
+            const isB_Yolo = b.modelKey === 'yolov8m' || b.name.toLowerCase().includes('yolov8');
+            if (isA_Yolo && !isB_Yolo) return -1;
+            if (!isA_Yolo && isB_Yolo) return 1;
+            return 0;
+          });
+          setModels(sorted);
           // Mặc định chọn model đầu tiên khả dụng
-          const available = data.find((m) => m.isAvailable) || data[0];
+          const available = sorted.find((m) => m.isAvailable) || sorted[0];
           setSelectedModelIds([available.id]);
         } else {
           setModels([]);
@@ -296,6 +308,16 @@ export const AnalyzePage: React.FC = () => {
                     )}
                   </button>
                 )}
+
+                <button
+                  type="button"
+                  onClick={() => loadModels(true)}
+                  title="Đồng bộ mô hình với máy chủ"
+                  className="text-xs font-semibold text-slate-500 hover:text-blue-600 flex items-center gap-1 transition-colors"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Đồng bộ</span>
+                </button>
 
                 <a 
                   href="/models" 
