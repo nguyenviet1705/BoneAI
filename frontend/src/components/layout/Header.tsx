@@ -48,6 +48,13 @@ export const Header: React.FC = () => {
           icon: Activity,
         };
       default:
+        if (location.pathname.startsWith('/results')) {
+          return {
+            title: 'Kết quả phân tích',
+            subtitle: 'Kết quả phát hiện gãy xương trên ảnh X-quang',
+            icon: Activity,
+          };
+        }
         return {
           title: 'BoneAI System',
           subtitle: 'Hệ thống hỗ trợ chẩn đoán gãy xương',
