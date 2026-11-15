@@ -8,7 +8,6 @@ from pydantic import ValidationError
 from app.core.config import settings
 from app.core.errors import ModelNotFoundException, ModelNotReadyException
 from app.inference.interfaces.base_adapter import BaseInferenceAdapter
-from app.inference.adapters.mock_adapter import MockInferenceAdapter
 from app.inference.adapters.yolo_adapter import YoloInferenceAdapter
 from app.inference.adapters.torchvision_adapter import TorchvisionFasterRCNNAdapter
 from app.schemas.manifest import ModelManifest
@@ -25,21 +24,8 @@ class ModelRegistry:
         self.discover_models()
 
     def _initialize_default_registry(self) -> None:
-        """Register the built-in development/mock model provider."""
-        mock_model = ModelInfo(
-            modelKey="mock-bone-fracture-v1",
-            modelName="Mock Pediatric Wrist Fracture Detector",
-            version="1.0.0",
-            framework="MockProvider",
-            artifactPath=None,
-            adapterId="mock",
-            isActive=True,
-            status=ModelStatus.REGISTERED,
-            supportedInputFormats=["image/jpeg", "image/png"],
-            description="Development and contract-testing mock adapter for pediatric wrist fracture detection",
-            classMapping={"0": "fracture"}
-        )
-        self.register_model(mock_model, MockInferenceAdapter("mock-bone-fracture-v1"))
+        """No mock models registered by default."""
+        pass
 
     def register_model(self, info: ModelInfo, adapter: Optional[BaseInferenceAdapter] = None) -> None:
         """Register a model and attempt adapter initialization without crashing on errors."""
@@ -185,22 +171,8 @@ class ModelRegistry:
     ) -> Optional[BaseInferenceAdapter]:
         adapter_id = manifest.adapterId.lower()
         if adapter_id == "mock":
-            # Extract mock parameters from inference settings if available
-            default_cls = manifest.classMapping.get("0", "fracture")
-            conf = manifest.postprocessing.confidenceThreshold if manifest.postprocessing.confidenceThreshold > 0 else 0.90
-            offset_x = float(manifest.inferenceSettings.get("boxOffsetX", 0.30))
-            offset_y = float(manifest.inferenceSettings.get("boxOffsetY", 0.35))
-            width_ratio = float(manifest.inferenceSettings.get("boxWidthRatio", 0.25))
-            height_ratio = float(manifest.inferenceSettings.get("boxHeightRatio", 0.20))
-            return MockInferenceAdapter(
-                model_key=manifest.modelKey,
-                default_class=default_cls,
-                confidence=conf,
-                box_offset_x=offset_x,
-                box_offset_y=offset_y,
-                box_width_ratio=width_ratio,
-                box_height_ratio=height_ratio
-            )
+            logger.warning(f"Mock adapter is disabled in production for model '{manifest.modelKey}'.")
+            return None
         elif adapter_id == "yolo" and artifact_path:
             iou_thresh = (
                 manifest.postprocessing.iouThreshold

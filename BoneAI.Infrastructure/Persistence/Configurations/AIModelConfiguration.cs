@@ -6,8 +6,6 @@ namespace BoneAI.Infrastructure.Persistence.Configurations;
 
 public class AIModelConfiguration : IEntityTypeConfiguration<AIModel>
 {
-    public const string DefaultMockModelId = "11111111-1111-1111-1111-111111111111";
-
     public void Configure(EntityTypeBuilder<AIModel> builder)
     {
         builder.ToTable("AIModels");
@@ -17,7 +15,7 @@ public class AIModelConfiguration : IEntityTypeConfiguration<AIModel>
         builder.Property(m => m.ModelKey)
             .IsRequired()
             .HasMaxLength(100)
-            .HasDefaultValue("mock-bone-fracture-v1");
+            .HasDefaultValue("yolov8m");
 
         builder.Property(m => m.Name)
             .IsRequired()
@@ -30,7 +28,7 @@ public class AIModelConfiguration : IEntityTypeConfiguration<AIModel>
         builder.Property(m => m.Framework)
             .IsRequired()
             .HasMaxLength(50)
-            .HasDefaultValue("MockProvider");
+            .HasDefaultValue("PyTorch");
 
         builder.Property(m => m.Description)
             .HasMaxLength(500);
@@ -61,19 +59,5 @@ public class AIModelConfiguration : IEntityTypeConfiguration<AIModel>
             .WithOne(r => r.AIModel)
             .HasForeignKey(r => r.AIModelId)
             .OnDelete(DeleteBehavior.Restrict);
-
-        // Seed initial development model
-        builder.HasData(new AIModel
-        {
-            Id = Guid.Parse(DefaultMockModelId),
-            ModelKey = "mock-bone-fracture-v1",
-            Name = "mock-bone-fracture-v1",
-            Version = "1.0.0",
-            Framework = "MockProvider",
-            Description = "Development and contract-testing mock adapter for pediatric wrist fracture detection",
-            IsActive = true,
-            IsAvailable = true,
-            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
-        });
     }
 }

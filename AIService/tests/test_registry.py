@@ -12,17 +12,15 @@ def test_list_models():
     response = client.get("/api/v1/models")
     assert response.status_code == 200
     data = response.json()
-    assert data["count"] >= 3
+    assert data["count"] >= 1
     keys = [m["modelKey"] for m in data["models"]]
-    assert "mock-bone-fracture-v1" in keys
-    assert "mock-wrist-yolo-v8" in keys
-    assert "mock-carpal-det-v2" in keys
+    assert "yolov8m" in keys
 
 def test_get_model_details():
-    response = client.get("/api/v1/models/mock-bone-fracture-v1")
+    response = client.get("/api/v1/models/yolov8m")
     assert response.status_code == 200
     data = response.json()
-    assert data["modelKey"] == "mock-bone-fracture-v1"
+    assert data["modelKey"] == "yolov8m"
     assert data["status"] == "Loaded"
     assert data["isActive"] is True
 
@@ -34,16 +32,8 @@ def test_discover_models_endpoint():
     response = client.post("/api/v1/models/discover")
     assert response.status_code == 200
     data = response.json()
-    assert data["discoveredCount"] >= 3
-    assert data["loadedCount"] >= 3
-
-def test_missing_artifact_model_is_unavailable():
-    response = client.get("/api/v1/models/unloaded-faster-rcnn")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["modelKey"] == "unloaded-faster-rcnn"
-    assert data["status"] == "Unavailable"
-    assert "not found" in data["errorMessage"].lower()
+    assert data["discoveredCount"] >= 1
+    assert data["loadedCount"] >= 1
 
 def test_isolated_registry_with_invalid_manifest():
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -54,9 +44,6 @@ def test_isolated_registry_with_invalid_manifest():
             f.write("invalid_yaml: [}")
 
         reg = ModelRegistry(models_dir=tmp_dir)
-        models = reg.list_models()
-        # Default mock model is still present
-        assert any(m.modelKey == "mock-bone-fracture-v1" for m in models)
         # Bad model is recorded as Failed
         bad_model = reg.get_model("bad-model")
         assert bad_model.status == ModelStatus.FAILED

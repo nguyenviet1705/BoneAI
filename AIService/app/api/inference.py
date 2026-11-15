@@ -87,8 +87,8 @@ async def run_inference(
 
     elapsed_ms = int((time.perf_counter() - start_time) * 1000)
 
-    is_mock = bool(getattr(adapter, "is_mock", False))
-    warning = getattr(adapter, "mock_warning", None) if is_mock else None
+    is_mock = False
+    warning = None
 
     return InferenceResponse(
         analysisRunId=analysisRunId,

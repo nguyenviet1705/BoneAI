@@ -15,4 +15,4 @@ def test_readiness():
     assert response.status_code == 200
     data = response.json()
     assert data["isReady"] is True
-    assert "mock-bone-fracture-v1" in data["loadedModels"]
+    assert "yolov8m" in data["loadedModels"]

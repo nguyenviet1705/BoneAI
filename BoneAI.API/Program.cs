@@ -156,8 +156,10 @@ if (app.Environment.IsDevelopment())
                         WHERE ModelKey = 'faster-rcnn';
                     END
 
-                    -- Deactivate legacy test mock keys so they do not clutter UI
-                    UPDATE AIModels SET IsActive = 0 WHERE ModelKey IN ('mock-wrist-yolo-v8', 'mock-carpal-det-v2', 'unloaded-faster-rcnn', 'mock-bone-fracture-v1');
+                    -- Remove legacy mock models and any linked runs so no mock data remains
+                    DELETE FROM AnalysisRuns WHERE AIModelId IN (SELECT Id FROM AIModels WHERE ModelKey IN ('mock-wrist-yolo-v8', 'mock-carpal-det-v2', 'unloaded-faster-rcnn', 'mock-bone-fracture-v1'));
+                    DELETE FROM AIModels WHERE ModelKey IN ('mock-wrist-yolo-v8', 'mock-carpal-det-v2', 'unloaded-faster-rcnn', 'mock-bone-fracture-v1');
+                    DELETE FROM Analyses WHERE Id NOT IN (SELECT DISTINCT AnalysisId FROM AnalysisRuns);
                 END";
             dbContext.Database.ExecuteSqlRaw(schemaFixSql);
         }

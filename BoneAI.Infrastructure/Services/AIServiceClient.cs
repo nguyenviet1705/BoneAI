@@ -6,7 +6,6 @@ using BoneAI.Domain.Exceptions;
 using BoneAI.Infrastructure.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using SixLabors.ImageSharp;
 
 namespace BoneAI.Infrastructure.Services;
 
@@ -50,11 +49,6 @@ public class AIServiceClient : IAIServiceClient
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "AI Service liveness check failed at {BaseAddress}health: {Message}", _httpClient.BaseAddress, ex.Message);
-            if (_options.EnableMockFallback)
-            {
-                _logger.LogInformation("EnableMockFallback is active: reporting AI Service as healthy (fallback mode).");
-                return true;
-            }
             return false;
         }
     }
@@ -69,7 +63,7 @@ public class AIServiceClient : IAIServiceClient
             var response = await _httpClient.GetAsync("ready", cts.Token);
             if (!response.IsSuccessStatusCode)
             {
-                return _options.EnableMockFallback;
+                return false;
             }
 
             var content = await response.Content.ReadAsStringAsync(cts.Token);
@@ -79,12 +73,12 @@ public class AIServiceClient : IAIServiceClient
                 return isReadyProp.GetBoolean();
             }
 
-            return _options.EnableMockFallback;
+            return false;
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "AI Service readiness check failed at {BaseAddress}ready: {Message}", _httpClient.BaseAddress, ex.Message);
-            return _options.EnableMockFallback;
+            return false;
         }
     }
 
@@ -108,12 +102,7 @@ public class AIServiceClient : IAIServiceClient
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to retrieve model catalog from AI Service: {Message}", ex.Message);
-            if (_options.EnableMockFallback)
-            {
-                _logger.LogInformation("EnableMockFallback is active: returning built-in fallback model catalog.");
-                return GetDefaultFallbackModels();
-            }
-            throw;
+            return Array.Empty<AIServiceModelDto>();
         }
     }
 
@@ -134,15 +123,7 @@ public class AIServiceClient : IAIServiceClient
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to retrieve details for model '{ModelKey}' from AI Service: {Message}", modelKey, ex.Message);
-            if (_options.EnableMockFallback)
-            {
-                var fallback = GetDefaultFallbackModels().FirstOrDefault(m => m.ModelKey.Equals(modelKey, StringComparison.OrdinalIgnoreCase));
-                if (fallback != null)
-                {
-                    return fallback;
-                }
-            }
-            throw;
+            return null;
         }
     }
 
@@ -159,18 +140,7 @@ public class AIServiceClient : IAIServiceClient
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to trigger model discovery on AI Service: {Message}", ex.Message);
-            if (_options.EnableMockFallback)
-            {
-                var models = GetDefaultFallbackModels();
-                return new AIServiceModelSyncResultDto
-                {
-                    DiscoveredCount = models.Count,
-                    LoadedCount = models.Count,
-                    FailedCount = 0,
-                    Models = models.ToList()
-                };
-            }
-            throw;
+            return new AIServiceModelSyncResultDto();
         }
     }
 
@@ -178,12 +148,6 @@ public class AIServiceClient : IAIServiceClient
         InferenceClientRequest request,
         CancellationToken cancellationToken = default)
     {
-        if (request.ModelKey.StartsWith("mock", StringComparison.OrdinalIgnoreCase))
-        {
-            _logger.LogInformation("Model '{ModelKey}' is a mock model. Using internal fallback inference.", request.ModelKey);
-            return GenerateFallbackInferenceResponse(request);
-        }
-
         _logger.LogInformation("Calling AI Service inference for Run {RunId}, Model {ModelKey}", request.AnalysisRunId, request.ModelKey);
 
         using var content = new MultipartFormDataContent();
@@ -213,21 +177,11 @@ public class AIServiceClient : IAIServiceClient
         catch (HttpRequestException ex)
         {
             _logger.LogError(ex, "HTTP network failure connecting to AI Service: {Message}", ex.Message);
-            if (_options.EnableMockFallback)
-            {
-                _logger.LogWarning("External AI Service is unreachable. Falling back to internal mock inference for Run {RunId}", request.AnalysisRunId);
-                return GenerateFallbackInferenceResponse(request);
-            }
             throw;
         }
         catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
             _logger.LogError(ex, "AI Service inference timed out after {Timeout} seconds", _options.TimeoutSeconds);
-            if (_options.EnableMockFallback)
-            {
-                _logger.LogWarning("External AI Service timed out. Falling back to internal mock inference for Run {RunId}", request.AnalysisRunId);
-                return GenerateFallbackInferenceResponse(request);
-            }
             throw new TimeoutException($"Inference service timed out after {_options.TimeoutSeconds} seconds.", ex);
         }
 
@@ -263,28 +217,12 @@ public class AIServiceClient : IAIServiceClient
 
             if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
-                if (_options.EnableMockFallback)
-                {
-                    _logger.LogWarning("Model '{ModelKey}' not found in external AI Service. Falling back to internal mock inference.", request.ModelKey);
-                    return GenerateFallbackInferenceResponse(request);
-                }
                 throw new NotFoundException(detailMessage ?? $"Requested model '{request.ModelKey}' was not found in AI Service registry.");
             }
 
             if (response.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable)
             {
-                if (_options.EnableMockFallback)
-                {
-                    _logger.LogWarning("External AI Service unavailable. Falling back to internal mock inference.");
-                    return GenerateFallbackInferenceResponse(request);
-                }
                 throw new InvalidOperationException(detailMessage ?? $"Model '{request.ModelKey}' is registered but not loaded/ready.");
-            }
-
-            if (_options.EnableMockFallback)
-            {
-                _logger.LogWarning("AI Service returned error status {StatusCode}. Falling back to internal mock inference.", response.StatusCode);
-                return GenerateFallbackInferenceResponse(request);
             }
 
             throw new HttpRequestException($"AI Service error [{(int)response.StatusCode}]: {detailMessage ?? response.ReasonPhrase}");
@@ -338,173 +276,5 @@ public class AIServiceClient : IAIServiceClient
         }
 
         return clientResponse;
-    }
-
-    private InferenceClientResponse GenerateFallbackInferenceResponse(InferenceClientRequest request)
-    {
-        int imgW = 1024;
-        int imgH = 1024;
-
-        try
-        {
-            if (request.ImageStream.CanSeek)
-            {
-                request.ImageStream.Position = 0;
-                var info = Image.Identify(request.ImageStream);
-                if (info != null)
-                {
-                    imgW = info.Width;
-                    imgH = info.Height;
-                }
-                request.ImageStream.Position = 0;
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Could not identify image dimensions in fallback inference; defaulting to 1024x1024.");
-        }
-
-        var key = request.ModelKey.ToLowerInvariant();
-        var detections = new List<InferenceDetectionItem>();
-        long processingTimeMs = 120;
-
-        if (key.Contains("yolov8") || key.Contains("v8"))
-        {
-            processingTimeMs = 136;
-            detections.Add(new InferenceDetectionItem
-            {
-                ClassName = "fracture",
-                Confidence = 0.9476m,
-                X = Math.Round(imgW * 0.38m, 1),
-                Y = Math.Round(imgH * 0.52m, 1),
-                Width = Math.Round(imgW * 0.22m, 1),
-                Height = Math.Round(imgH * 0.18m, 1)
-            });
-        }
-        else if (key.Contains("yolov11") || key.Contains("v11"))
-        {
-            processingTimeMs = 142;
-            detections.Add(new InferenceDetectionItem
-            {
-                ClassName = "fracture",
-                Confidence = 0.9512m,
-                X = Math.Round(imgW * 0.39m, 1),
-                Y = Math.Round(imgH * 0.51m, 1),
-                Width = Math.Round(imgW * 0.20m, 1),
-                Height = Math.Round(imgH * 0.17m, 1)
-            });
-        }
-        else if (key.Contains("yolov26") || key.Contains("v26"))
-        {
-            processingTimeMs = 151;
-            detections.Add(new InferenceDetectionItem
-            {
-                ClassName = "fracture",
-                Confidence = 0.9348m,
-                X = Math.Round(imgW * 0.37m, 1),
-                Y = Math.Round(imgH * 0.53m, 1),
-                Width = Math.Round(imgW * 0.21m, 1),
-                Height = Math.Round(imgH * 0.16m, 1)
-            });
-            detections.Add(new InferenceDetectionItem
-            {
-                ClassName = "fracture_suspect",
-                Confidence = 0.7250m,
-                X = Math.Round(imgW * 0.55m, 1),
-                Y = Math.Round(imgH * 0.48m, 1),
-                Width = Math.Round(imgW * 0.15m, 1),
-                Height = Math.Round(imgH * 0.14m, 1)
-            });
-        }
-        else if (key.Contains("rcnn") || key.Contains("faster"))
-        {
-            processingTimeMs = 287;
-            detections.Add(new InferenceDetectionItem
-            {
-                ClassName = "fracture",
-                Confidence = 0.9120m,
-                X = Math.Round(imgW * 0.36m, 1),
-                Y = Math.Round(imgH * 0.50m, 1),
-                Width = Math.Round(imgW * 0.24m, 1),
-                Height = Math.Round(imgH * 0.20m, 1)
-            });
-        }
-        else
-        {
-            processingTimeMs = 150;
-            detections.Add(new InferenceDetectionItem
-            {
-                ClassName = "fracture",
-                Confidence = 0.9270m,
-                X = Math.Round(imgW * 0.38m, 1),
-                Y = Math.Round(imgH * 0.52m, 1),
-                Width = Math.Round(imgW * 0.22m, 1),
-                Height = Math.Round(imgH * 0.18m, 1)
-            });
-        }
-
-        return new InferenceClientResponse
-        {
-            AnalysisRunId = request.AnalysisRunId,
-            ModelKey = request.ModelKey,
-            ModelVersion = request.ModelVersion ?? "1.0",
-            ImageWidth = imgW,
-            ImageHeight = imgH,
-            ProcessingTimeMs = processingTimeMs,
-            Detections = detections,
-            IsMockResult = true,
-            Warning = "AI Service offline: inference evaluated via high-precision fallback engine."
-        };
-    }
-
-    private static IReadOnlyList<AIServiceModelDto> GetDefaultFallbackModels()
-    {
-        return new List<AIServiceModelDto>
-        {
-            new()
-            {
-                ModelKey = "yolov8m",
-                ModelName = "YOLOv8m",
-                Version = "1.0 (baseline_640)",
-                Framework = "PyTorch",
-                ArtifactPath = "models/best.pt",
-                IsActive = true,
-                Status = "Loaded",
-                Description = "Baseline • 640x640 • mAP@50: 94.76% • FPS: ~64"
-            },
-            new()
-            {
-                ModelKey = "yolov11",
-                ModelName = "YOLOv11",
-                Version = "2.0",
-                Framework = "PyTorch",
-                ArtifactPath = "models/yolov11.pt",
-                IsActive = true,
-                Status = "Loaded",
-                Description = "YOLOv11 wrist fracture detector • mAP@50: 95.12%"
-            },
-            new()
-            {
-                ModelKey = "yolov26",
-                ModelName = "YOLOv26",
-                Version = "3.0",
-                Framework = "PyTorch",
-                ArtifactPath = "models/yolov26.pt",
-                IsActive = true,
-                Status = "Loaded",
-                Description = "Experimental multi-scale detector • mAP@50: 93.48%"
-            },
-            new()
-            {
-                ModelKey = "faster-rcnn",
-                ModelName = "Faster R-CNN",
-                Version = "1.0",
-                Framework = "PyTorch",
-                ArtifactPath = "models/faster_rcnn.pth",
-                IsActive = true,
-                Status = "Loaded",
-                Description = "Two-stage detector • mAP@50: 91.20%"
-            }
-        };
     }
 }

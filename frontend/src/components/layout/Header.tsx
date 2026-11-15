@@ -94,7 +94,7 @@ export const Header: React.FC = () => {
             ) : (
               <>
                 <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
-                <span>AI Offline (Mock Mode)</span>
+                <span>AI Service Ngoại tuyến</span>
               </>
             )}
           </div>

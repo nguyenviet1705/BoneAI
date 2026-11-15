@@ -161,7 +161,7 @@ public class AnalysisBackgroundWorker : BackgroundService
 
         var modelKey = !string.IsNullOrEmpty(run.AIModel?.ModelKey)
             ? run.AIModel.ModelKey
-            : (run.AIModel?.Name ?? "mock-bone-fracture-v1");
+            : (run.AIModel?.Name ?? "yolov8m");
         var modelVersion = run.AIModel?.Version;
 
         // Detect storage image dimensions to verify against inference response

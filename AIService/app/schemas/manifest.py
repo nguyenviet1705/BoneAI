@@ -58,7 +58,7 @@ class ModelManifest(BaseModel):
             elif "torchvision" in arch_str or "faster" in arch_str:
                 adapter = "torchvision"
             else:
-                adapter = "mock"
+                adapter = "yolo"
 
         # Map classes dictionary
         classes = data.get("classMapping") or data.get("classes") or {"0": "fracture"}
