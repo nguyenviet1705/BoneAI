@@ -78,6 +78,18 @@ if (app.Environment.IsDevelopment())
         options.SwaggerEndpoint("/swagger/v1/swagger.json", "BoneAI Web API v1");
         options.RoutePrefix = "swagger";
     });
+
+    // Automatically ensure development database schema and seeded data exist
+    using var scope = app.Services.CreateScope();
+    var dbContext = scope.ServiceProvider.GetRequiredService<BoneAI.Infrastructure.Persistence.BoneAIDbContext>();
+    try
+    {
+        dbContext.Database.EnsureCreated();
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogWarning(ex, "Could not ensure database creation on startup: {Message}", ex.Message);
+    }
 }
 
 app.UseHttpsRedirection();
