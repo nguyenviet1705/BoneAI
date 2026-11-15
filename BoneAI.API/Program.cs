@@ -85,9 +85,24 @@ if (app.Environment.IsDevelopment())
     var dbContext = scope.ServiceProvider.GetRequiredService<BoneAI.Infrastructure.Persistence.BoneAIDbContext>();
     try
     {
-        if (dbContext.Database.IsRelational())
+        if (dbContext.Database.IsSqlServer())
         {
             dbContext.Database.EnsureCreated();
+
+            const string schemaFixSql = @"
+                IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'Analyses')
+                BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Analyses') AND name = 'IsDeleted')
+                        ALTER TABLE Analyses ADD IsDeleted BIT NOT NULL DEFAULT 0;
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Analyses') AND name = 'DeletedAt')
+                        ALTER TABLE Analyses ADD DeletedAt DATETIME2 NULL;
+                END
+                IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'AnalysisRuns')
+                BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('AnalysisRuns') AND name = 'ResultImagePath')
+                        ALTER TABLE AnalysisRuns ADD ResultImagePath NVARCHAR(500) NULL;
+                END";
+            dbContext.Database.ExecuteSqlRaw(schemaFixSql);
         }
     }
     catch (Exception ex)
