@@ -75,7 +75,7 @@ export const XRayImageViewer: React.FC<Props> = ({
       <div className="flex items-center justify-between px-3 py-2 bg-slate-900 text-slate-200 text-xs font-semibold rounded-t-2xl border-b border-slate-800">
         <span>{title}</span>
         {detections.length > 0 && (
-          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30">
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30">
             {detections.length} vùng tổn thương
           </span>
         )}
@@ -144,12 +144,12 @@ export const XRayImageViewer: React.FC<Props> = ({
                     }}
                     className={`pointer-events-auto transition-all duration-150 border-2 rounded-sm ${
                       isHighlighted
-                        ? 'border-red-400 bg-red-500/30 ring-4 ring-red-400/50 shadow-lg shadow-red-500/50 z-20'
-                        : 'border-red-500 bg-red-500/20 hover:bg-red-500/30 z-10'
+                        ? 'border-blue-400 bg-blue-500/30 ring-4 ring-blue-400/50 shadow-lg shadow-blue-500/50 z-20'
+                        : 'border-blue-500 bg-blue-500/20 hover:bg-blue-500/30 z-10'
                     }`}
                   >
                     {/* Floating Label with pill tag matching UI mockup: 'Fracture 92.7%' */}
-                    <div className="absolute -top-7 left-0 whitespace-nowrap px-2.5 py-0.5 rounded-md bg-red-600 text-white text-[11px] font-bold shadow-md flex items-center gap-1">
+                    <div className="absolute -top-7 left-0 whitespace-nowrap px-2.5 py-0.5 rounded-md bg-blue-600 text-white text-[11px] font-bold shadow-md flex items-center gap-1">
                       <span className="capitalize">{det.classLabel || 'Fracture'}</span>
                       <span>{confidencePercent}%</span>
                     </div>

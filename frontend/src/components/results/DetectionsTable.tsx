@@ -18,7 +18,7 @@ export const DetectionsTable: React.FC<Props> = ({
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
           <span>Danh sách vùng nghi ngờ</span>
-          <span className="w-5 h-5 rounded-full bg-red-100 text-red-600 text-[11px] font-bold flex items-center justify-center">
+          <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-600 text-[11px] font-bold flex items-center justify-center">
             {detections.length}
           </span>
         </h3>
@@ -53,14 +53,14 @@ export const DetectionsTable: React.FC<Props> = ({
                     onMouseEnter={() => onHoverDetection?.(det.detectionId)}
                     onMouseLeave={() => onHoverDetection?.(null)}
                     className={`transition-colors cursor-pointer ${
-                      isHovered ? 'bg-red-50/60 font-semibold' : 'hover:bg-slate-50'
+                      isHovered ? 'bg-blue-50/60 font-semibold' : 'hover:bg-slate-50'
                     }`}
                   >
                     <td className="py-2.5 px-2.5 font-bold text-slate-500">
                       {index + 1}
                     </td>
                     <td className="py-2.5 px-2.5">
-                      <span className="capitalize font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-md">
+                      <span className="capitalize font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">
                         {det.classLabel || 'fracture'}
                       </span>
                     </td>

@@ -2,6 +2,7 @@ using BoneAI.Application.Interfaces;
 using BoneAI.Domain.Entities;
 using Microsoft.Extensions.Logging;
 using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats.Png;
 using SixLabors.ImageSharp.PixelFormats;
 
 namespace BoneAI.Infrastructure.Services;
@@ -12,9 +13,10 @@ public class ImageRenderingService : IImageRenderingService
     private readonly IImageStorageService _storageService;
     private readonly ILogger<ImageRenderingService> _logger;
 
-    private static readonly Rgba32 BoxColor = new(255, 59, 48, 255);       // Vivid medical Red
-    private static readonly Rgba32 BannerBgColor = new(20, 20, 20, 220);    // Dark translucent badge
-    private static readonly Rgba32 TextColor = new(255, 255, 255, 255);    // White text
+    // Ultralytics Google Colab Electric Blue (#0066FF / 0, 102, 255)
+    private static readonly Rgba32 BoxColor = new(0, 102, 255, 255);
+    private static readonly Rgba32 BannerBgColor = new(0, 102, 255, 255);
+    private static readonly Rgba32 TextColor = new(255, 255, 255, 255);
 
     public ImageRenderingService(
         IAnalysisRunRepository runRepo,
@@ -53,14 +55,20 @@ public class ImageRenderingService : IImageRenderingService
         {
             using var image = await Image.LoadAsync<Rgba32>(rawStream, cancellationToken);
 
-            // Draw each detection bounding box and label
+            // Draw each detection bounding box and label in Colab Electric Blue
             foreach (var detection in run.Detections)
             {
                 DrawDetection(image, detection);
             }
 
             using var outputStream = new MemoryStream();
-            await image.SaveAsPngAsync(outputStream, cancellationToken);
+            // Force 32-bit RGB with Alpha to preserve bright blue colors even if input image is Grayscale
+            var pngEncoder = new PngEncoder
+            {
+                ColorType = PngColorType.RgbWithAlpha,
+                CompressionLevel = PngCompressionLevel.DefaultCompression
+            };
+            await image.SaveAsPngAsync(outputStream, pngEncoder, cancellationToken);
             outputStream.Position = 0;
 
             var fileName = $"result_{runId:N}.png";
@@ -95,16 +103,17 @@ public class ImageRenderingService : IImageRenderingService
         w = Math.Clamp(w, 1, imgW - x);
         h = Math.Clamp(h, 1, imgH - y);
 
-        int thickness = Math.Clamp(Math.Max(imgW, imgH) / 300, 2, 6);
+        int thickness = Math.Clamp(Math.Max(imgW, imgH) / 200, 3, 7);
 
-        // 1. Draw Bounding Box rectangle
+        // 1. Draw Bounding Box rectangle in Electric Blue
         DrawRectangle(image, x, y, w, h, thickness, BoxColor);
 
-        // 2. Prepare Label text
-        var label = $"{detection.ClassName.ToUpperInvariant()} {(int)Math.Round(detection.Confidence * 100)}%";
-        int charW = 6;
-        int charH = 8;
-        int padding = 4;
+        // 2. Prepare Label text matching Google Colab style: "fracture 0.78"
+        var label = $"{detection.ClassName} {detection.Confidence:0.00}";
+        int fontScale = Math.Clamp(Math.Max(imgW, imgH) / 550, 1, 3);
+        int charW = 6 * fontScale;
+        int charH = 8 * fontScale;
+        int padding = 4 * fontScale;
         int bannerW = (label.Length * charW) + (padding * 2);
         int bannerH = charH + (padding * 2);
 
@@ -113,13 +122,13 @@ public class ImageRenderingService : IImageRenderingService
         bannerX = Math.Clamp(bannerX, 0, Math.Max(0, imgW - bannerW));
         bannerY = Math.Clamp(bannerY, 0, Math.Max(0, imgH - bannerH));
 
-        // 3. Draw Banner background
+        // 3. Draw Solid Blue Banner background
         FillRectangle(image, bannerX, bannerY, Math.Min(bannerW, imgW - bannerX), Math.Min(bannerH, imgH - bannerY), BannerBgColor);
 
-        // 4. Draw Label text pixels
+        // 4. Draw Label text pixels in crisp white
         int textX = bannerX + padding;
         int textY = bannerY + padding;
-        DrawString(image, textX, textY, label, TextColor);
+        DrawString(image, textX, textY, label, TextColor, fontScale);
     }
 
     private static void DrawRectangle(Image<Rgba32> image, int x, int y, int w, int h, int thickness, Rgba32 color)
@@ -137,7 +146,7 @@ public class ImageRenderingService : IImageRenderingService
             {
                 for (int px = x; px < xMax; px++) image[px, topY] = color;
             }
-            if (botY >= 0 && botY != topY)
+            if (botY >= 0 && botY != topY && botY < image.Height)
             {
                 for (int px = x; px < xMax; px++) image[px, botY] = color;
             }
@@ -153,7 +162,7 @@ public class ImageRenderingService : IImageRenderingService
             {
                 for (int py = y; py < yMax; py++) image[leftX, py] = color;
             }
-            if (rightX >= 0 && rightX != leftX)
+            if (rightX >= 0 && rightX != leftX && rightX < image.Width)
             {
                 for (int py = y; py < yMax; py++) image[rightX, py] = color;
             }
@@ -174,33 +183,39 @@ public class ImageRenderingService : IImageRenderingService
         }
     }
 
-    private static void DrawString(Image<Rgba32> image, int startX, int startY, string text, Rgba32 color)
+    private static void DrawString(Image<Rgba32> image, int startX, int startY, string text, Rgba32 color, int fontScale = 1)
     {
         int curX = startX;
         foreach (char c in text)
         {
-            DrawChar(image, curX, startY, c, color);
-            curX += 6;
+            DrawChar(image, curX, startY, char.ToUpperInvariant(c), color, fontScale);
+            curX += 6 * fontScale;
         }
     }
 
-    private static void DrawChar(Image<Rgba32> image, int x, int y, char c, Rgba32 color)
+    private static void DrawChar(Image<Rgba32> image, int x, int y, char c, Rgba32 color, int fontScale = 1)
     {
         var glyph = GetGlyph(c);
         for (int row = 0; row < 7; row++)
         {
-            int py = y + row;
-            if (py < 0 || py >= image.Height) continue;
-
             byte rowBits = glyph[row];
             for (int col = 0; col < 5; col++)
             {
-                int px = x + col;
-                if (px < 0 || px >= image.Width) continue;
-
                 if ((rowBits & (0x10 >> col)) != 0)
                 {
-                    image[px, py] = color;
+                    for (int dy = 0; dy < fontScale; dy++)
+                    {
+                        int py = y + (row * fontScale) + dy;
+                        if (py < 0 || py >= image.Height) continue;
+
+                        for (int dx = 0; dx < fontScale; dx++)
+                        {
+                            int px = x + (col * fontScale) + dx;
+                            if (px < 0 || px >= image.Width) continue;
+
+                            image[px, py] = color;
+                        }
+                    }
                 }
             }
         }
@@ -208,7 +223,6 @@ public class ImageRenderingService : IImageRenderingService
 
     private static byte[] GetGlyph(char c)
     {
-        // 5x7 bitmap font definitions for common ASCII characters
         return c switch
         {
             '0' => new byte[] { 0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E },
