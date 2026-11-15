@@ -54,10 +54,14 @@ async def run_inference(
 
     # Get model and adapter
     model_info = registry.get_model(modelKey)
-    if modelVersion and model_info.version != modelVersion:
-        raise ModelNotReadyException(
-            modelKey, f"Version mismatch: requested '{modelVersion}', but registered version is '{model_info.version}'."
-        )
+    if modelVersion:
+        # Flexible version check: ignore parenthetical labels and minor subversion format differences
+        norm_req = modelVersion.split("(")[0].strip().rstrip(".")
+        norm_mod = model_info.version.split("(")[0].strip().rstrip(".")
+        if norm_req and norm_mod and not (norm_req in norm_mod or norm_mod in norm_req):
+            raise ModelNotReadyException(
+                modelKey, f"Version mismatch: requested '{modelVersion}', but registered version is '{model_info.version}'."
+            )
 
     adapter = registry.get_adapter(modelKey)
 

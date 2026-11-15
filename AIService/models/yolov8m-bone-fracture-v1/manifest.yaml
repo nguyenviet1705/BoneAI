@@ -1,4 +1,4 @@
-modelKey: "yolov8m_baseline_640"
+modelKey: "yolov8m"
 modelName: "YOLOv8m Baseline Pediatric Wrist Fracture Detector"
 version: "1.0.0"
 framework: "Ultralytics"
