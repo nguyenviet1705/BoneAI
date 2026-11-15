@@ -1,6 +1,7 @@
 using BoneAI.Application.DependencyInjection;
 using BoneAI.Infrastructure.DependencyInjection;
 using BoneAI.API.Extensions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -79,12 +80,15 @@ if (app.Environment.IsDevelopment())
         options.RoutePrefix = "swagger";
     });
 
-    // Automatically ensure development database schema and seeded data exist
+    // Automatically ensure development database schema and seeded data exist for relational databases
     using var scope = app.Services.CreateScope();
     var dbContext = scope.ServiceProvider.GetRequiredService<BoneAI.Infrastructure.Persistence.BoneAIDbContext>();
     try
     {
-        dbContext.Database.EnsureCreated();
+        if (dbContext.Database.IsRelational())
+        {
+            dbContext.Database.EnsureCreated();
+        }
     }
     catch (Exception ex)
     {
