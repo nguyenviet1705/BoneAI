@@ -202,10 +202,21 @@ class ModelRegistry:
                 box_height_ratio=height_ratio
             )
         elif adapter_id == "yolo" and artifact_path:
+            iou_thresh = (
+                manifest.postprocessing.iouThreshold
+                if manifest.postprocessing and hasattr(manifest.postprocessing, "iouThreshold")
+                else 0.45
+            )
+            conf_thresh = (
+                manifest.postprocessing.confidenceThreshold
+                if manifest.postprocessing and hasattr(manifest.postprocessing, "confidenceThreshold")
+                else 0.25
+            )
             return YoloInferenceAdapter(
                 model_key=manifest.modelKey,
                 artifact_path=artifact_path,
-                confidence_threshold=manifest.postprocessing.confidenceThreshold
+                confidence_threshold=conf_thresh,
+                iou_threshold=iou_thresh
             )
         elif adapter_id in ("torchvision", "faster_rcnn") and artifact_path:
             return TorchvisionFasterRCNNAdapter(
@@ -217,27 +228,34 @@ class ModelRegistry:
         return None
 
     def get_model(self, model_key: str) -> ModelInfo:
-        if model_key not in self._models:
-            raise ModelNotFoundException(model_key)
-        return self._models[model_key]
+        if model_key in self._models:
+            return self._models[model_key]
+        
+        # Fuzzy match alias (e.g. yolov8m <-> yolov8m_baseline_640)
+        norm_req = model_key.lower().replace("_", "").replace("-", "")
+        for key, model in self._models.items():
+            norm_key = key.lower().replace("_", "").replace("-", "")
+            if norm_req in norm_key or norm_key in norm_req:
+                return model
+
+        raise ModelNotFoundException(model_key)
 
     def list_models(self) -> List[ModelInfo]:
         return list(self._models.values())
 
     def get_adapter(self, model_key: str) -> BaseInferenceAdapter:
-        if model_key not in self._models:
-            raise ModelNotFoundException(model_key)
+        model = self.get_model(model_key)
+        resolved_key = model.modelKey
 
-        model = self._models[model_key]
         if not model.isActive:
-            raise ModelNotReadyException(model_key, "Model is marked inactive.")
+            raise ModelNotReadyException(resolved_key, "Model is marked inactive.")
 
         if model.status == ModelStatus.UNAVAILABLE:
-            raise ModelNotReadyException(model_key, f"Model is unavailable: {model.errorMessage}")
+            raise ModelNotReadyException(resolved_key, f"Model is unavailable: {model.errorMessage}")
 
-        adapter = self._adapters.get(model_key)
+        adapter = self._adapters.get(resolved_key)
         if adapter is None or not adapter.is_loaded():
-            raise ModelNotReadyException(model_key, f"Model status is '{model.status}'. Adapter not loaded.")
+            raise ModelNotReadyException(resolved_key, f"Model status is '{model.status}'. Adapter not loaded.")
 
         return adapter
 
