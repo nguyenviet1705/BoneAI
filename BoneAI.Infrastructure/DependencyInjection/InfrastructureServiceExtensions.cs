@@ -40,6 +40,7 @@ public static class InfrastructureServiceExtensions
         services.AddScoped<IAnalysisRepository, AnalysisRepository>();
         services.AddScoped<IAnalysisRunRepository, AnalysisRunRepository>();
         services.AddScoped<IAIModelRepository, AIModelRepository>();
+        services.AddScoped<IImageRenderingService, ImageRenderingService>();
         services.AddSingleton<IImageStorageService, LocalImageStorageService>();
         services.AddSingleton<IImageValidator, ImageValidator>();
 

@@ -90,11 +90,12 @@ public class AnalysisBackgroundWorker : BackgroundService
                 var scopedAnalysisRepo = workerScope.ServiceProvider.GetRequiredService<IAnalysisRepository>();
                 var scopedStorageService = workerScope.ServiceProvider.GetRequiredService<IImageStorageService>();
                 var scopedAiClient = workerScope.ServiceProvider.GetRequiredService<IAIServiceClient>();
+                var scopedRenderingService = workerScope.ServiceProvider.GetService<IImageRenderingService>();
 
                 var scopedRun = await scopedRunRepo.GetByIdAsync(runId, cancellationToken);
                 if (scopedRun != null)
                 {
-                    await ExecuteRunInScopeAsync(scopedRun, scopedRunRepo, scopedAnalysisRepo, scopedStorageService, scopedAiClient, cancellationToken);
+                    await ExecuteRunInScopeAsync(scopedRun, scopedRunRepo, scopedAnalysisRepo, scopedStorageService, scopedAiClient, scopedRenderingService, cancellationToken);
                 }
             }
             catch (Exception ex)
@@ -117,6 +118,7 @@ public class AnalysisBackgroundWorker : BackgroundService
         var analysisRepo = scope.ServiceProvider.GetRequiredService<IAnalysisRepository>();
         var storageService = scope.ServiceProvider.GetRequiredService<IImageStorageService>();
         var aiClient = scope.ServiceProvider.GetRequiredService<IAIServiceClient>();
+        var renderingService = scope.ServiceProvider.GetService<IImageRenderingService>();
 
         var run = await runRepo.ClaimNextPendingRunAsync(TimeSpan.FromMinutes(2), cancellationToken);
         if (run == null)
@@ -124,7 +126,7 @@ public class AnalysisBackgroundWorker : BackgroundService
             return false;
         }
 
-        await ExecuteRunInScopeAsync(run, runRepo, analysisRepo, storageService, aiClient, cancellationToken);
+        await ExecuteRunInScopeAsync(run, runRepo, analysisRepo, storageService, aiClient, renderingService, cancellationToken);
         return true;
     }
 
@@ -134,6 +136,7 @@ public class AnalysisBackgroundWorker : BackgroundService
         IAnalysisRepository analysisRepo,
         IImageStorageService storageService,
         IAIServiceClient aiClient,
+        IImageRenderingService? renderingService,
         CancellationToken cancellationToken)
     {
         var analysis = run.Analysis;
@@ -199,6 +202,22 @@ public class AnalysisBackgroundWorker : BackgroundService
 
             // Transactionally persist detections isolated to this run
             await runRepo.SaveDetectionsAsync(run.Id, detections, cancellationToken);
+
+            if (renderingService != null && detections.Count > 0)
+            {
+                try
+                {
+                    var renderedPath = await renderingService.RenderAndSaveRunImageAsync(run.Id, cancellationToken);
+                    if (!string.IsNullOrEmpty(renderedPath))
+                    {
+                        run.ResultImagePath = renderedPath;
+                    }
+                }
+                catch (Exception renderEx)
+                {
+                    _logger.LogWarning(renderEx, "Non-fatal: failed to generate rendered image for Run {RunId}: {Message}", run.Id, renderEx.Message);
+                }
+            }
 
             run.Status = AnalysisRunStatus.Completed;
             run.CompletedAt = DateTime.UtcNow;
