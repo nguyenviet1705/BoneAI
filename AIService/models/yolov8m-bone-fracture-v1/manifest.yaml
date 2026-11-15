@@ -1,0 +1,43 @@
+modelKey: "yolov8m_baseline_640"
+modelName: "YOLOv8m Baseline Pediatric Wrist Fracture Detector"
+version: "1.0.0"
+framework: "Ultralytics"
+adapterId: "yolo"
+artifactFile: "weights/best.pt"
+isActive: true
+description: "YOLOv8m trained on pediatric wrist fracture dataset (75 epochs, mAP50 0.937, Precision 0.916)"
+supportedInputFormats:
+  - "image/jpeg"
+  - "image/png"
+classMapping:
+  "0": "fracture"
+preprocessing:
+  inputSize: [640, 640]
+  normalize: true
+postprocessing:
+  confidenceThreshold: 0.25
+  iouThreshold: 0.45
+  maxDetections: 50
+inputRequirements:
+  minWidth: 64
+  minHeight: 64
+  maxFileSizeMb: 30
+
+# Training configuration metadata
+training:
+  epochs_configured: 100
+  epochs_recorded: 75
+  best_epoch: 47
+  patience: 20
+  batch_size: 16
+  image_size: 640
+  seed: 42
+  optimizer: auto
+  pretrained: true
+
+# Evaluation metrics on validation set
+best_metrics:
+  precision: 0.91605
+  recall: 0.86581
+  map50: 0.93722
+  map50_95: 0.56286
