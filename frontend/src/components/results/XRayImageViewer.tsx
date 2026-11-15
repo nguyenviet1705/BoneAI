@@ -193,39 +193,3 @@ export const XRayImageViewer: React.FC<Props> = ({
     </div>
   );
 };
-
-        {/* Floating View Controls (Bottom Right) */}
-        <div className="absolute bottom-3 right-3 flex items-center gap-1.5 p-1 rounded-xl bg-slate-900/80 backdrop-blur-md border border-slate-700/60 shadow-lg text-slate-300">
-          <button
-            type="button"
-            onClick={handleZoomIn}
-            title="Phóng to"
-            className="p-1.5 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
-          >
-            <ZoomIn className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            onClick={handleZoomOut}
-            title="Thu nhỏ"
-            className="p-1.5 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
-          >
-            <ZoomOut className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            onClick={handleReset}
-            title="Đặt lại góc nhìn"
-            className="p-1.5 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-          </button>
-          <div className="w-[1px] h-4 bg-slate-700 mx-0.5" />
-          <span className="text-[10px] font-mono px-1 font-semibold text-slate-400">
-            {Math.round(scale * 100)}%
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-};
