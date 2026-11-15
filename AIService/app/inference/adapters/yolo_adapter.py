@@ -76,7 +76,8 @@ class YoloInferenceAdapter(BaseInferenceAdapter):
         confidence_threshold: float = 0.20,
         iou_threshold: float = 0.45,
         image_size: int = 640,
-        max_detections: Optional[int] = None
+        max_detections: Optional[int] = None,
+        rect: Optional[bool] = None
     ):
         self.model_key = model_key
         self.artifact_path = artifact_path
@@ -84,6 +85,8 @@ class YoloInferenceAdapter(BaseInferenceAdapter):
         self.iou_threshold = iou_threshold
         self.image_size = image_size
         self.max_detections = max_detections
+        self.rect = rect
+        self.sha256: Optional[str] = None
         self._model = None
         self._ort_session = None
         self._ort_input_name = None
@@ -95,20 +98,25 @@ class YoloInferenceAdapter(BaseInferenceAdapter):
             raise FileNotFoundError(f"YOLO model weights file not found at: {self.artifact_path}")
 
         try:
+            # Calculate SHA256 checksum for weights audit and reproducibility
+            import hashlib
+            with open(self.artifact_path, "rb") as f:
+                self.sha256 = hashlib.sha256(f.read()).hexdigest()
+
             # NumPy 2.4+ compatibility fix for Ultralytics
             if not hasattr(np, "trapz") and hasattr(np, "trapezoid"):
                 np.trapz = np.trapezoid
 
             if self._is_onnx:
                 import onnxruntime as ort
-                logger.info(f"Loading YOLO ONNX model from: {self.artifact_path}")
+                logger.info(f"Loading YOLO ONNX model from: {self.artifact_path} (SHA256: {self.sha256[:16]}...)")
                 self._ort_session = ort.InferenceSession(self.artifact_path, providers=["CPUExecutionProvider"])
                 self._ort_input_name = self._ort_session.get_inputs()[0].name
                 self._is_loaded = True
                 logger.info(f"[OK] YOLO ONNX model '{self.model_key}' loaded successfully!")
             else:
                 from ultralytics import YOLO
-                logger.info(f"Loading YOLO PyTorch model from: {self.artifact_path} ({os.path.getsize(self.artifact_path) / (1024**2):.2f} MB)")
+                logger.info(f"Loading YOLO PyTorch model from: {self.artifact_path} ({os.path.getsize(self.artifact_path) / (1024**2):.2f} MB, SHA256: {self.sha256[:16]}...)")
                 self._model = YOLO(self.artifact_path)
                 self._is_loaded = True
                 logger.info(f"[OK] YOLO model '{self.model_key}' loaded successfully! Classes: {getattr(self._model, 'names', {})}")
@@ -140,16 +148,20 @@ class YoloInferenceAdapter(BaseInferenceAdapter):
             return self._predict_ultralytics(cv_image)
 
     def _predict_ultralytics(self, cv_image: np.ndarray) -> List[DetectionResult]:
-        # Execute YOLO predict with manifest-driven parameters
+        orig_h, orig_w = cv_image.shape[:2]
+
+        # Execute YOLO predict aligning exactly with Google Colab configuration:
+        # Colab does not specify rect=False; leaving rect to Ultralytics default enables rectangular minimum padding
         predict_kwargs = {
             "source": cv_image,
             "conf": self.confidence_threshold,
             "iou": self.iou_threshold,
             "imgsz": self.image_size,
-            "rect": False,
             "save": False,
             "verbose": False
         }
+        if self.rect is not None:
+            predict_kwargs["rect"] = self.rect
         if self.max_detections is not None:
             predict_kwargs["max_det"] = self.max_detections
 
@@ -166,6 +178,12 @@ class YoloInferenceAdapter(BaseInferenceAdapter):
 
                 xyxy = box.xyxy[0].tolist()
                 x1, y1, x2, y2 = xyxy
+
+                # Strict boundary clipping within original image dimensions
+                x1 = max(0.0, min(float(orig_w), float(x1)))
+                y1 = max(0.0, min(float(orig_h), float(y1)))
+                x2 = max(0.0, min(float(orig_w), float(x2)))
+                y2 = max(0.0, min(float(orig_h), float(y2)))
 
                 if hasattr(self._model, "names") and class_id in self._model.names:
                     class_name = self._model.names[class_id]

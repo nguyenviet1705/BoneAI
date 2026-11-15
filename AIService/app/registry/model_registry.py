@@ -196,13 +196,16 @@ class ModelRegistry:
                 len(manifest.preprocessing.inputSize) > 0):
                 img_size = int(manifest.preprocessing.inputSize[0])
 
+            rect_opt = manifest.inferenceSettings.get("rect") if manifest.inferenceSettings else None
+
             return YoloInferenceAdapter(
                 model_key=manifest.modelKey,
                 artifact_path=artifact_path,
                 confidence_threshold=conf_thresh,
                 iou_threshold=iou_thresh,
                 image_size=img_size,
-                max_detections=max_dets
+                max_detections=max_dets,
+                rect=rect_opt
             )
         elif adapter_id in ("torchvision", "faster_rcnn") and artifact_path:
             return TorchvisionFasterRCNNAdapter(

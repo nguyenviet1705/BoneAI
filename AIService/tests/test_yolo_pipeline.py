@@ -46,13 +46,12 @@ def yolo_adapter():
 def test_16bit_image_pipeline_matches_ultralytics(yolo_model, yolo_adapter):
     """
     Test 1: 16-bit Grayscale medical X-ray (I;16).
-    Verifies that the project pipeline decodes and predicts identically to Ultralytics YOLO.predict on file path.
-    Previously this failed with 0 boxes due to PIL convert('RGB') clamping.
+    Verifies that the project pipeline decodes and predicts identically to Ultralytics YOLO.predict on file path (Colab style).
     """
     assert os.path.exists(TEST_16BIT_PNG), f"Sample image missing: {TEST_16BIT_PNG}"
 
-    # 1. Standard Ultralytics prediction (like on Google Colab with file path)
-    res_standard = yolo_model.predict(source=TEST_16BIT_PNG, imgsz=640, conf=0.20, iou=0.45, rect=False, verbose=False)[0]
+    # 1. Standard Ultralytics prediction (exact Colab style: no rect parameter)
+    res_standard = yolo_model.predict(source=TEST_16BIT_PNG, imgsz=640, conf=0.20, iou=0.45, verbose=False)[0]
     expected_boxes = res_standard.boxes.xyxy.tolist()
     expected_confs = [round(float(c), 4) for c in res_standard.boxes.conf]
 
@@ -91,7 +90,8 @@ def test_8bit_grayscale_image_pipeline_matches_ultralytics(yolo_model, yolo_adap
     """
     assert os.path.exists(TEST_L_PNG)
 
-    res_standard = yolo_model.predict(source=TEST_L_PNG, imgsz=640, conf=0.20, iou=0.45, rect=False, verbose=False)[0]
+    # Colab style: source=path, no rect param
+    res_standard = yolo_model.predict(source=TEST_L_PNG, imgsz=640, conf=0.20, iou=0.45, verbose=False)[0]
     expected_boxes = res_standard.boxes.xyxy.tolist()
     expected_confs = [round(float(c), 4) for c in res_standard.boxes.conf]
 
@@ -111,7 +111,8 @@ def test_rgba_image_pipeline_matches_ultralytics(yolo_model, yolo_adapter):
     """
     assert os.path.exists(TEST_RGBA_PNG)
 
-    res_standard = yolo_model.predict(source=TEST_RGBA_PNG, imgsz=640, conf=0.20, iou=0.45, rect=False, verbose=False)[0]
+    # Colab style: source=path, no rect param
+    res_standard = yolo_model.predict(source=TEST_RGBA_PNG, imgsz=640, conf=0.20, iou=0.45, verbose=False)[0]
     expected_boxes = res_standard.boxes.xyxy.tolist()
     expected_confs = [round(float(c), 4) for c in res_standard.boxes.conf]
 
@@ -190,3 +191,39 @@ def test_fastapi_inference_endpoint_with_16bit_image():
         assert box["y"] >= 0
         assert box["width"] > 0
         assert box["height"] > 0
+
+def test_invalid_model_path_raises_error():
+    """Test 6: Invalid model weights path produces meaningful FileNotFoundError."""
+    adapter = YoloInferenceAdapter(
+        model_key="invalid-model",
+        artifact_path="non/existent/path/weights.pt"
+    )
+    with pytest.raises(FileNotFoundError) as exc_info:
+        adapter.load()
+    assert "not found" in str(exc_info.value).lower()
+
+def test_model_sha256_checksum_calculated(yolo_adapter):
+    """Test 7: Verify SHA256 checksum is correctly calculated during model load."""
+    assert yolo_adapter.sha256 is not None
+    assert len(yolo_adapter.sha256) == 64
+    # Check known SHA256 hash prefix for best.pt
+    assert yolo_adapter.sha256.startswith("9710aec0682d4303")
+
+def test_blank_image_returns_empty_detections(yolo_adapter):
+    """Test 8: Blank image produces zero detections cleanly without crashing."""
+    blank_img = np.zeros((400, 400, 3), dtype=np.uint8)
+    results = yolo_adapter.predict(blank_img, run_id="test-blank")
+    assert isinstance(results, list)
+    assert len(results) == 0
+
+def test_boundary_clipping_strictly_within_bounds(yolo_adapter):
+    """Test 9: Verify boundary clipping guarantees all boxes stay strictly within [0, W] and [0, H]."""
+    test_img = cv2.imread(TEST_16BIT_PNG)
+    h, w = test_img.shape[:2]
+    results = yolo_adapter.predict(test_img, run_id="test-bounds")
+    for det in results:
+        b = det.boundingBox
+        assert b.x >= 0.0
+        assert b.y >= 0.0
+        assert b.x + b.width <= w + 1e-2
+        assert b.y + b.height <= h + 1e-2

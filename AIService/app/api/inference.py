@@ -1,5 +1,6 @@
 import asyncio
 import io
+import logging
 import time
 from typing import Optional
 import cv2
@@ -12,6 +13,8 @@ from app.core.config import settings
 from app.core.errors import InvalidImageException, ModelNotReadyException
 from app.registry.model_registry import registry
 from app.schemas.inference import InferenceResponse
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/inference", tags=["Inference"])
 
@@ -86,6 +89,12 @@ async def run_inference(
         detections = await run_in_threadpool(adapter.predict, processed_image, analysisRunId)
 
     elapsed_ms = int((time.perf_counter() - start_time) * 1000)
+
+    logger.info(
+        f"Inference completed: runId={analysisRunId}, model={modelKey}, "
+        f"inputSize={img_width}x{img_height}, detections={len(detections)}, "
+        f"time={elapsed_ms}ms"
+    )
 
     is_mock = False
     warning = None
